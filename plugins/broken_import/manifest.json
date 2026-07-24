@@ -1,0 +1,7 @@
+{
+  "plugin_id": "broken_import_mod",
+  "name": "Broken Import Module",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.non_existent_pkg.FakeModule"
+}

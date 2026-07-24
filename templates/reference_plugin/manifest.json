@@ -1,0 +1,18 @@
+{
+  "plugin_id": "reference_analytics_plugin",
+  "name": "Reference Analytics Plugin Template",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.templates.reference_plugin.module.ReferenceAnalyticsModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Official reference template plugin demonstrating AnalyticsModule contract",
+  "capabilities": [
+    "TRACKING",
+    "ZONE"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 100
+}

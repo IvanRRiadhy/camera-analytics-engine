@@ -1,0 +1,7 @@
+{
+  "plugin_id": "invalid_type_mod",
+  "name": "Invalid Type Module",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.invalid_type.module.NonModuleDynamicClass"
+}
