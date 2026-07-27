@@ -1,4 +1,4 @@
-# Architecture Specification — Platform v1.0.0 Frozen
+# Architecture Specification — Platform v1.1.0 (Runtime & Messaging Active)
 
 ---
 
@@ -53,12 +53,34 @@
 │                                         ▼                                                │
 │  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                   DiagnosticsCollector (Passive Latency & Health)                  │  │
-│  └────────────────────────────────────────────────────────────────────────────────────┘  │
+│  └──────────────────────────────────────┬─────────────────────────────────────────────┘  │
 └─────────────────────────────────────────┬────────────────────────────────────────────────┘
                                           │
                                           ▼
                                ┌────────────────────────────────────────┐
                                │     Communication Layer (Publishers)   │
+                               │  ┌──────────────────────────────────┐  │
+                               │  │        RabbitMQPublisher         │  │
+                               │  │   (AMQP Topic / Persistent ACK)  │  │
+                               │  └────────────────┬─────────────────┘  │
+                               └───────────────────┼────────────────────┘
+                                                   │
+                                                   ▼
+                               ┌────────────────────────────────────────┐
+                               │     RabbitMQ Broker (cctv_vhost)       │
+                               │  - engine.events.exchange (Topic)      │
+                               │  - cctv.analytics (Topic)              │
+                               └───────────────────┬────────────────────┘
+                                                   │
+                                                   ▼
+                               ┌────────────────────────────────────────┐
+                               │       .NET 8 Backend API Host          │
+                               │  (EngineRegistrationConsumerService)   │
+                               └───────────────────┬────────────────────┘
+                                                   │
+                                                   ▼
+                               ┌────────────────────────────────────────┐
+                               │    SQL Server (WorkerNodes & Instances)│
                                └────────────────────────────────────────┘
 ```
 
@@ -72,3 +94,4 @@
 4. **Execution Scheduler**: Pengaturan ritme waktu eksekusi (`EVERY_FRAME`, `INTERVAL`, `MANUAL`) terpisah dari logika pemrosesan modul.
 5. **Exception Isolation Barrier**: Kegagalan modul analitik diisolasi penuh tanpa merusak kernel utama.
 6. **Passive Diagnostics & Profiling**: Kolektor metrik pasif tanpa efek samping pada alur eksekusi kernel.
+7. **Distributed Worker Registration**: Integrasi AMQP RabbitMQ (`RabbitMQPublisher`) untuk mendaftarkan identitas node (`WorkerNode`) dan instance (`EngineInstance`) secara otomatis ke .NET Backend.
