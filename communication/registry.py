@@ -1,7 +1,7 @@
 """
 Event Publisher Plugin Registry.
 
-Provides a decoupled plugin registration mechanism for registering and dynamically loading
+Provides a controlled registration mechanism for registering and dynamically loading
 EventPublisher plugins by string identifier without modifying Communication Layer core.
 """
 
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 class PublisherRegistry:
     """Central plugin registry for EventPublisher plugins.
 
-    Allows dynamic plugin registration via method call or `@register_publisher("type")` decorator.
-    Zero hardcoded publisher references.
+    Allows dynamic plugin registration via `@register_publisher("type")` decorator
+    or controlled manifest discovery from camera_analytics.communication.publishers.__all__.
     """
 
     _registry: dict[str, Type[EventPublisher]] = {}
@@ -33,7 +33,7 @@ class PublisherRegistry:
         def decorator(publisher_cls: Type[EventPublisher]) -> Type[EventPublisher]:
             clean_type = type_name.strip().lower()
             if clean_type in cls._registry:
-                logger.warning(
+                logger.debug(
                     "PublisherRegistry: Overwriting existing publisher registration for '%s'", clean_type
                 )
             cls._registry[clean_type] = publisher_cls
@@ -47,19 +47,20 @@ class PublisherRegistry:
 
     @classmethod
     def _ensure_defaults(cls) -> None:
-        """Ensure built-in publishers are registered if registry is empty."""
+        """Ensure built-in publishers are registered via controlled package manifest imports."""
         if not cls._registry:
             if cls._known_classes:
                 cls._registry.update(cls._known_classes)
             else:
                 try:
-                    import camera_analytics.communication.publishers.console_publisher  # noqa: F401
-                    import camera_analytics.communication.publishers.log_publisher      # noqa: F401
-                    import camera_analytics.communication.publishers.mqtt_publisher     # noqa: F401
-                    import camera_analytics.communication.publishers.rabbitmq_publisher # noqa: F401
-                    import camera_analytics.communication.publishers.rest_publisher     # noqa: F401
+                    # Controlled discovery using explicit publishers manifest
+                    import camera_analytics.communication.publishers as pub_manifest
+                    for pub_name in getattr(pub_manifest, "__all__", []):
+                        pub_cls = getattr(pub_manifest, pub_name, None)
+                        if pub_cls is not None and hasattr(pub_cls, "name"):
+                            pass  # Decorators register class upon import
                 except Exception as exc:
-                    logger.debug("PublisherRegistry auto-import error: %s", exc)
+                    logger.debug("PublisherRegistry controlled import error: %s", exc)
 
     @classmethod
     def get(cls, type_name: str) -> Optional[Type[EventPublisher]]:
@@ -97,12 +98,7 @@ class PublisherRegistry:
         cls._ensure_defaults()
         return type_name.strip().lower() in cls._registry
 
-    @classmethod
-    def clear(cls) -> None:
-        """Clear all registered publishers (used in testing)."""
-        cls._registry.clear()
-
 
 def register_publisher(type_name: str) -> Callable[[Type[EventPublisher]], Type[EventPublisher]]:
-    """Helper shortcut decorator for registering an EventPublisher plugin."""
+    """Standalone decorator shorthand for PublisherRegistry.register."""
     return PublisherRegistry.register(type_name)

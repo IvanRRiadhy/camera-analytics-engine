@@ -20,6 +20,7 @@ from camera_analytics.core.spatial.geometry import (
     PolygonGeometry,
 )
 from camera_analytics.core.spatial.models import (
+    PixelPoint,
     Point2D,
     ZoneModel,
     ZoneType,
@@ -78,7 +79,13 @@ class PolygonLoader:
                 Point2D(0.0, 1.0),
             ]
 
-        pixel_polygon = transform_engine.normalized_to_pixel_polygon(normalized_points)
+        # Auto-detect whether input points are in Pixel Space (x > 1.0 or y > 1.0)
+        is_pixel_space = any(pt.x > 1.0 or pt.y > 1.0 for pt in normalized_points)
+        if is_pixel_space:
+            pixel_polygon = [PixelPoint(x=int(round(pt.x)), y=int(round(pt.y))) for pt in normalized_points]
+            normalized_points = [transform_engine.pixel_to_normalized_point(pt) for pt in pixel_polygon]
+        else:
+            pixel_polygon = transform_engine.normalized_to_pixel_polygon(normalized_points)
 
         # Instantiate concrete IGeometry implementation
         if zone_type == ZoneType.LINE and len(pixel_polygon) >= 2:

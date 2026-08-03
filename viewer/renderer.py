@@ -161,7 +161,7 @@ class OverlayRenderer:
                         2,
                     )
 
-        # 6. Render HUD Runtime Metrics
+        # 6. Render HUD Runtime Metrics with Semi-Transparent Background Box
         if self.options.draw_metrics and presentation.metrics:
             m = presentation.metrics
             lines = [
@@ -169,17 +169,48 @@ class OverlayRenderer:
                 f"FPS In: {m.fps_input:.1f} | Latency: {m.read_latency_ms:.1f}ms + {m.pipeline_latency_ms:.1f}ms",
                 f"Queue Size: {m.queue_size} | Active Tracks: {m.active_tracks_count} | Zones: {m.active_zones_count}",
             ]
-            y0 = 30
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.55
+            thickness = 2
+            line_height = 24
+            padding = 10
+
+            # Calculate box dimensions for text block
+            max_w = 0
+            for line in lines:
+                (tw, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
+                if tw > max_w:
+                    max_w = tw
+
+            box_x1 = 12
+            box_y1 = 10
+            box_x2 = box_x1 + max_w + (padding * 2)
+            box_y2 = box_y1 + (len(lines) * line_height) + padding
+
+            # Draw semi-transparent dark grey background box
+            h_c, w_c = canvas.shape[:2]
+            box_x2 = min(w_c - 5, box_x2)
+            box_y2 = min(h_c - 5, box_y2)
+
+            overlay = canvas.copy()
+            cv2.rectangle(overlay, (box_x1, box_y1), (box_x2, box_y2), (30, 30, 30), -1)
+            cv2.addWeighted(overlay, 0.65, canvas, 0.35, 0, canvas)
+            cv2.rectangle(canvas, (box_x1, box_y1), (box_x2, box_y2), (80, 80, 80), 1)
+
+            # Render yellow text over the background box
+            y0 = box_y1 + padding + 15
             for line in lines:
                 cv2.putText(
                     canvas,
                     line,
-                    (20, y0),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    (box_x1 + padding, y0),
+                    font,
+                    font_scale,
                     (0, 255, 255),
-                    2,
+                    thickness,
+                    cv2.LINE_AA,
                 )
-                y0 += 25
+                y0 += line_height
 
         return canvas

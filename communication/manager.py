@@ -108,13 +108,16 @@ class CommunicationManager:
         if routing_rules:
             self._router.load_rules(routing_rules)
 
-        # Load publishers from config
-        pub_configs = config.get("publishers", comm_cfg.get("publishers", []))
-        if pub_configs:
-            self._publisher_manager.load_from_config(pub_configs)
+        from camera_analytics.communication.config_normalizer import ConfigNormalizer
+
+        # Normalize publisher configurations (supports strings and objects)
+        normalized_pub_configs = ConfigNormalizer.normalize_publishers(config)
+        if normalized_pub_configs:
+            self._publisher_manager.load_from_config(normalized_pub_configs)
 
         self._is_initialized = True
-        logger.info("CommunicationManager initialized (queue_size=%d)", self._queue_size)
+        logger.info("CommunicationManager initialized (queue_size=%d, publishers=%s)", 
+                    self._queue_size, list(self._publisher_manager.publishers.keys()))
 
     def start(self) -> None:
         """Start background worker thread and publisher manager."""
@@ -140,20 +143,28 @@ class CommunicationManager:
             self._stop_event.set()
             logger.info("CommunicationManager: Transitioned to STOPPING state. Rejecting new incoming events.")
 
+    def has_publisher(self, publisher_type: str) -> bool:
+        """Check whether a specific publisher type is registered and active."""
+        clean_type = publisher_type.strip().lower()
+        return clean_type in self._publisher_manager.publishers
+
+    def publish_snapshot(self, snapshot_dict: dict[str, Any]) -> bool:
+        """Dispatch camera analytics snapshot payload directly to active EventPublisher instances."""
+        return self.publish_raw("cctv.analytics", "analytics.snapshot", snapshot_dict)
+
     def publish_raw(self, exchange: str, routing_key: str, payload_dict: dict[str, Any]) -> bool:
-        """Publish a raw payload dictionary directly to all active publishers supporting publish_raw."""
+        """Publish a raw payload dictionary directly to all active EventPublisher instances using publish_raw template method."""
         if not self._is_running or self._stop_event.is_set():
             return False
 
         success = False
         for pub_name, pub in self._publisher_manager.publishers.items():
-            if hasattr(pub, "publish_raw"):
-                try:
-                    res = pub.publish_raw(exchange, routing_key, payload_dict)
-                    if res:
-                        success = True
-                except Exception as exc:
-                    logger.error("Publisher '%s' publish_raw error: %s", pub_name, exc)
+            try:
+                res = pub.publish_raw(exchange, routing_key, payload_dict)
+                if res:
+                    success = True
+            except Exception as exc:
+                logger.error("Publisher '%s' publish_raw error: %s", pub_name, exc)
         return success
 
     def enqueue(self, event: StandardAnalyticsEvent) -> bool:

@@ -79,6 +79,26 @@ class FramePresentationBuilder:
                     box_color = (0, 255, 0)
                     box_label = f"Track #{t_id} [{st_name}] ({conf:.2f})"
 
+                    # Extract Keypoints from track object graph for Skeleton Rendering
+                    kps_obj = track.get("keypoints")
+                    if not kps_obj and isinstance(track.get("detection"), object):
+                        kps_obj = getattr(track.get("detection"), "keypoints", None)
+
+                    if kps_obj:
+                        raw_kps = getattr(kps_obj, "keypoints", ())
+                        if raw_kps:
+                            pres_kps = tuple(
+                                PresentedPoint(x=int(kp.x), y=int(kp.y), confidence=float(kp.confidence))
+                                for kp in raw_kps
+                            )
+                            skeletons.append(
+                                PresentedSkeleton(
+                                    track_id=t_id,
+                                    keypoints=pres_kps,
+                                    color_rgb=(0, 255, 255),
+                                )
+                            )
+
                     boxes.append(
                         PresentedBox(
                             track_id=t_id,

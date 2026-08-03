@@ -46,7 +46,12 @@ class ZoneEventType(Enum):
 class GroundPointSource(Enum):
     """Source method for track ground point calculation."""
 
+    ANKLE_MIDPOINT = auto()
+    LEFT_ANKLE = auto()
+    RIGHT_ANKLE = auto()
     POSE_ANKLES = auto()
+    KNEE = auto()
+    HIP = auto()
     BBOX_BOTTOM_CENTER = auto()
 
 

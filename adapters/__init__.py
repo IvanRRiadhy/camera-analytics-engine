@@ -1,17 +1,21 @@
 """
 Adapters package.
 
-Contains concrete implementations and stubs of framework ports:
-    - detection/  : DetectorPort implementations (FakeDetector, YOLOPoseAdapter)
-    - tracking/   : TrackerPort implementations (FakeTracker, BoTSORTAdapter)
+Concrete implementations of ports (DetectorPort, TrackerPort, PipelineWorker).
 """
 
-from camera_analytics.adapters.detection import FakeDetector, YOLOPoseAdapter
-from camera_analytics.adapters.tracking import BoTSORTAdapter, FakeTracker
+from camera_analytics.adapters.bridge.inference_pipeline import (
+    FrameProcessingSummary,
+    InferencePipeline,
+)
+from camera_analytics.adapters.bridge.pipeline_worker import PipelineExecutionWorker
+from camera_analytics.adapters.detection.yolo_pose_adapter import YOLOPoseAdapter
+from camera_analytics.adapters.tracking.botsort_adapter import BoTSORTAdapter
 
 __all__ = [
-    "FakeDetector",
     "YOLOPoseAdapter",
-    "FakeTracker",
     "BoTSORTAdapter",
+    "InferencePipeline",
+    "PipelineExecutionWorker",
+    "FrameProcessingSummary",
 ]

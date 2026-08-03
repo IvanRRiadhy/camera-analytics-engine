@@ -18,8 +18,6 @@ from typing import Any
 
 from camera_analytics.adapters import (
     BoTSORTAdapter,
-    FakeDetector,
-    FakeTracker,
     YOLOPoseAdapter,
 )
 from camera_analytics.analytics.people import PeopleAnalytics

@@ -49,10 +49,34 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help="Run AI Engine in Standalone Mode using local configuration file.",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="enterprise",
+        choices=["enterprise", "standalone"],
+        help="Execution runtime mode (enterprise or standalone).",
+    )
+    parser.add_argument(
+        "--config-file",
+        type=str,
+        default="configs/standalone.json",
+        help="Path to local configuration JSON file for Standalone Mode.",
+    )
+    parser.add_argument(
         "--config",
         type=str,
-        default="config",
+        default="configs/production.json",
         help="Path to configuration directory or JSON configuration file.",
+    )
+    parser.add_argument(
+        "--backend-url",
+        type=str,
+        default="http://localhost:5100",
+        help="ASP.NET Core Backend REST API base URL for Enterprise Mode.",
     )
     parser.add_argument(
         "--headless",
@@ -106,15 +130,13 @@ def main(max_run_sec: Optional[float] = None) -> int:
     args = parse_args()
     setup_logging(args.log_level)
 
-    logger.info("=" * 80)
-    logger.info("Enterprise CCTV Analytics Platform — AI Engine Core v1.5.0")
-    logger.info("=" * 80)
+    # Resolve Runtime Mode and Configuration Provider Strategy
+    from camera_analytics.bootstrap.factory import ConfigurationProviderFactory, RuntimeModeResolver
 
-    # 1. Load Configuration Snapshot & Bootstrap Platform from Backend REST API
-    from camera_analytics.bootstrap.providers.backend_provider import BackendConfigurationProvider
-    
-    logger.info("[+] Loading Runtime Configuration Snapshot from ASP.NET Core Backend API (http://localhost:5100)...")
-    provider = BackendConfigurationProvider(backend_url="http://localhost:5100")
+    runtime_mode = RuntimeModeResolver.resolve(args)
+    logger.info("[+] Runtime Mode Resolved: '%s'", runtime_mode.value.upper())
+
+    provider = ConfigurationProviderFactory.create(mode=runtime_mode, cli_args=args)
     bootstrap = EngineBootstrap(provider=provider)
     boot_res = bootstrap.bootstrap()
 
