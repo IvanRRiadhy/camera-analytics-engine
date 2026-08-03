@@ -8,7 +8,7 @@ monitors publisher health, and enforces Exception Isolation across all publisher
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from camera_analytics.communication.models import StandardAnalyticsEvent
 from camera_analytics.communication.publisher_base import EventPublisher
@@ -71,6 +71,10 @@ class PublisherManager:
                 logger.error("PublisherManager: Failed to load publisher '%s' of type '%s' (%s)",
                              pub_name, pub_type, exc)
 
+    def get_health_status(self) -> dict[str, dict[str, Any]]:
+        """Get health status snapshot for all registered publishers."""
+        return {name: pub.get_health() for name, pub in self._publishers.items()}
+
     # --- Lifecycle Contracts ---
 
     def initialize(self, global_config: Optional[dict[str, Any]] = None) -> None:
@@ -103,12 +107,18 @@ class PublisherManager:
         self._is_running = True
         logger.info("PublisherManager: Started %d publisher(s)", len(self._publishers))
 
-    def broadcast(self, event: StandardAnalyticsEvent, serialized_payload: str) -> tuple[int, int]:
-        """Broadcast serialized event payload to all active publishers with Exception Isolation.
+    def broadcast(
+        self,
+        event: StandardAnalyticsEvent,
+        serialized_payload: str,
+        target_publishers: Optional[list[str]] = None,
+    ) -> tuple[int, int]:
+        """Broadcast serialized event payload to active target publishers with Exception Isolation.
 
         Args:
             event: StandardAnalyticsEvent instance.
             serialized_payload: Pre-serialized JSON string.
+            target_publishers: Optional list of target publisher names to publish to.
 
         Returns:
             Tuple of (successful_publishes_count, failed_publishes_count).
@@ -117,6 +127,9 @@ class PublisherManager:
         failure_count = 0
 
         for name, pub in self._publishers.items():
+            if target_publishers is not None and name not in target_publishers:
+                continue
+
             if not pub.is_running or not pub.is_enabled:
                 continue
 
@@ -128,7 +141,7 @@ class PublisherManager:
                     failure_count += 1
             except Exception as exc:
                 failure_count += 1
-                logger.error("Exception Isolation: Publisher '%s' exception during publish (%s)", name, exc)
+                logger.exception("Exception Isolation: Publisher '%s' exception during publish", name)
 
         return success_count, failure_count
 

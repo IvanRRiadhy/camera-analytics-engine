@@ -18,6 +18,7 @@ import time
 import unittest
 from pathlib import Path
 
+import camera_analytics.communication
 from camera_analytics.communication.manager import CommunicationManager
 from camera_analytics.communication.models import (
     AnalyticsEventSerializer,

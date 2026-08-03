@@ -1,0 +1,14 @@
+{
+  "camera_id": "cam_ent_sdk",
+  "name": "Main Entrance Lobby Cam",
+  "resolution": [1728, 1080],
+  "fps": 12.1,
+  "zones": [
+    {
+      "zone_id": "lobby_main",
+      "name": "Main Entrance Lobby",
+      "zone_type": "region",
+      "polygon": [[560, 860], [1100, 720], [1500, 1070], [500, 1070]]
+    }
+  ]
+}

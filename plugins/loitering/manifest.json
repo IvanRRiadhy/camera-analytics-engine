@@ -1,0 +1,19 @@
+{
+  "plugin_id": "loitering",
+  "name": "Loitering Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.loitering.module.LoiteringModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Detects stationary loitering inside spatial zones and emits LOITERING warning/critical events",
+  "capabilities": [
+    "ZONE",
+    "TRACKING",
+    "GROUND_POINT"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 14
+}

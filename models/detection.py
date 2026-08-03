@@ -254,7 +254,7 @@ class Detection:
             3. Right ankle if only right ankle is visible.
             4. Fallback: Bottom-center of the bounding box.
         """
-        if self.keypoints is not None:
+        if self.keypoints is not None and isinstance(self.keypoints, PoseKeypoints):
             left_ankle = self.keypoints.left_ankle
             right_ankle = self.keypoints.right_ankle
 

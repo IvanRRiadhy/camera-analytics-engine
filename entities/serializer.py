@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from camera_analytics.communication.models import StandardAnalyticsEvent
+from camera_analytics.communication.models import EventSeverity, StandardAnalyticsEvent
 from camera_analytics.entities.models import (
     CameraEntity,
     FrameEntity,
@@ -50,8 +50,12 @@ class EntitySerializer:
         zone: Optional[ZoneEntity] = None,
         payload: Optional[AnalyticsPayload | dict[str, Any]] = None,
         severity: str = "INFO",
+        correlation_id: Optional[str] = None,
+        track_id: Optional[int] = None,
+        zone_id: Optional[str] = None,
+        zone_name: Optional[str] = None,
     ) -> StandardAnalyticsEvent:
-        """Construct a standardized StandardAnalyticsEvent payload from Domain Entities.
+        """Construct a standardized StandardAnalyticsEvent payload from Domain Entities and raw data.
 
         Args:
             event_type: String identifier of event classification (e.g. 'ZONE_ENTER').
@@ -63,6 +67,10 @@ class EntitySerializer:
             zone: Optional ZoneEntity instance.
             payload: Optional AnalyticsPayload or dict payload.
             severity: Event severity ('INFO', 'WARNING', 'ALERT', 'CRITICAL').
+            correlation_id: Optional correlation ID string.
+            track_id: Explicit track ID integer fallback.
+            zone_id: Explicit zone ID string fallback.
+            zone_name: Explicit zone name string fallback.
 
         Returns:
             StandardAnalyticsEvent instance ready for Communication Layer enqueueing.
@@ -77,30 +85,51 @@ class EntitySerializer:
         if zone is not None and "zone" not in payload_dict:
             payload_dict["zone"] = zone.to_dict()
 
-        camera_id = camera.camera_id if camera else "default_cam"
-        camera_name = camera.camera_name if camera else "Default Camera"
-        frame_idx = frame.frame_index if frame else 0
-        tr_id = track.track_id if track else None
-        z_id = zone.zone_id if zone else None
-        z_name = zone.zone_name if zone else None
+        # Derive camera info
+        camera_id = camera.camera_id if camera else payload_dict.get("camera_id", "default_cam")
+        camera_name = camera.camera_name if camera else payload_dict.get("camera_name", "Default Camera")
 
-        return StandardAnalyticsEvent(
-            event_type=event_type,
-            message=message,
-            analytics_module=analytics_module,
-            camera_id=camera_id,
-            camera_name=camera_name,
-            severity=severity,
-            track_id=tr_id,
-            zone_id=z_id,
-            zone_name=z_name,
-            frame_index=frame_idx,
-            payload=payload_dict,
-            metadata={
-                "frame": frame.to_dict() if frame else None,
-                "camera": camera.to_dict() if camera else None,
-            },
-        )
+        # Derive frame info
+        frame_idx = frame.frame_index if frame else payload_dict.get("frame_index", 0)
+
+        # Derive track ID
+        derived_track_id = track.track_id if track else (track_id if track_id is not None else payload_dict.get("track_id"))
+
+        # Derive zone ID and zone name
+        derived_zone_id = zone.zone_id if zone else (zone_id if zone_id else payload_dict.get("zone_id"))
+        derived_zone_name = zone.zone_name if zone else (zone_name if zone_name else payload_dict.get("zone_name"))
+
+        # Fallback zone_name to zone_id if zone_name is None
+        if derived_zone_id and not derived_zone_name:
+            derived_zone_name = str(derived_zone_id)
+
+        # Derive correlation ID if in payload
+        derived_corr_id = correlation_id or payload_dict.get("correlation_id")
+
+        metadata_dict: dict[str, Any] = {
+            "camera": camera.to_dict() if camera else {"camera_id": camera_id, "camera_name": camera_name},
+            "frame": frame.to_dict() if frame else {"frame_index": frame_idx},
+        }
+
+        # Build StandardAnalyticsEvent
+        event_kwargs: dict[str, Any] = {
+            "event_type": event_type,
+            "message": message,
+            "analytics_module": analytics_module,
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "severity": severity,
+            "track_id": derived_track_id,
+            "zone_id": derived_zone_id,
+            "zone_name": derived_zone_name,
+            "frame_index": frame_idx,
+            "payload": payload_dict,
+            "metadata": metadata_dict,
+        }
+        if derived_corr_id:
+            event_kwargs["correlation_id"] = derived_corr_id
+
+        return StandardAnalyticsEvent(**event_kwargs)
 
     @classmethod
     def to_json(cls, entity: Any) -> str:

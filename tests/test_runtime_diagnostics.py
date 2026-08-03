@@ -1,11 +1,12 @@
 """
-Unit tests for Runtime Diagnostics & Profiling Component (Sprint 10I).
+Unit tests for Runtime Diagnostics & Profiling Component (Sprint 10I & Sprint 12.6).
 
 Verifies:
     1. RuntimeMetrics aggregation (frame counts, FPS calculation, latency averages).
     2. PluginMetrics per-module calculations (executed count, skipped count, events, min/max/avg execution time).
     3. RuntimeHealth evaluation rules (HEALTHY, WARNING, DEGRADED, FAILED).
     4. DiagnosticsReport snapshot generation breakdown (slowest/fastest plugin, top producer, top skip ratio).
+    5. HardwareDiagnosticCollector system CPU, RAM, and GPU hardware metrics collection.
 """
 
 import time
@@ -15,6 +16,7 @@ from typing import Any, Optional
 from camera_analytics.diagnostics import (
     DiagnosticsCollector,
     DiagnosticsReport,
+    HardwareDiagnosticCollector,
     PluginMetrics,
     RuntimeHealth,
     RuntimeMetrics,
@@ -177,6 +179,26 @@ class TestRuntimeDiagnostics(unittest.TestCase):
             self.assertEqual(report.slowest_plugin.module_id, "slow_mod")
             self.assertEqual(report.fastest_plugin.module_id, "fast_mod")
             self.assertEqual(report.highest_event_producer.module_id, "fast_mod")
+
+    def test_hardware_diagnostic_collector(self) -> None:
+        """Test HardwareDiagnosticCollector system CPU, RAM, and GPU hardware metrics collection."""
+        collector = HardwareDiagnosticCollector()
+        metrics = collector.collect_system_metrics()
+
+        self.assertIn("cpu_usage_percent", metrics)
+        self.assertIn("memory_used_mb", metrics)
+        self.assertIn("memory_total_mb", metrics)
+        self.assertIn("gpu_metrics", metrics)
+
+        gpu_metrics = metrics["gpu_metrics"]
+        self.assertIn("gpu_usage_percent", gpu_metrics)
+        self.assertIn("vram_used_mb", gpu_metrics)
+        self.assertIn("vram_total_mb", gpu_metrics)
+        self.assertIn("gpu_temperature_c", gpu_metrics)
+        self.assertIn("power_draw_watts", gpu_metrics)
+
+        self.assertGreaterEqual(metrics["cpu_usage_percent"], 0.0)
+        self.assertGreaterEqual(metrics["memory_total_mb"], 0)
 
 
 if __name__ == "__main__":

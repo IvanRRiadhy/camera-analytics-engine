@@ -1,0 +1,18 @@
+{
+  "plugin_id": "zone_occupancy",
+  "name": "Zone Occupancy Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.zone_occupancy.module.ZoneOccupancyModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Monitors spatial zone track occupancy and emits occupancy analytics events",
+  "capabilities": [
+    "ZONE",
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 10
+}

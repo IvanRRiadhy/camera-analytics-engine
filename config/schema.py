@@ -8,6 +8,8 @@ Defines strongly-typed, immutable dataclass schemas for each subsystem:
     - TrackerConfig: Object tracking algorithm and matching parameters.
     - RunnerConfig: Execution loop parameters (skipping, frame limits).
     - AnalyticsConfig: Active analytics modules and module-specific settings.
+    - LoggingConfig: Detail level settings ('summary', 'standard', 'full').
+    - SerializationConfig: Granular field inclusion toggles.
     - AppConfig: Root configuration combining all subsystem configurations.
 """
 
@@ -36,6 +38,7 @@ class CameraConfig:
     resolution: tuple[int, int] = (1920, 1080)
     fps: float = 30.0
     zones: tuple[Zone, ...] = ()
+    raw_zones_payload: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +121,34 @@ class AnalyticsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class LoggingConfig:
+    """Configuration for enterprise logging detail levels.
+
+    Attributes:
+        detail_level: Event logging detail level ('summary', 'standard', 'full').
+    """
+
+    detail_level: str = "summary"
+
+
+@dataclass(frozen=True, slots=True)
+class SerializationConfig:
+    """Configuration for event field inclusions during serialization.
+
+    Attributes:
+        include_pose: Whether to include 17 COCO pose keypoints.
+        include_bbox: Whether to include object bounding boxes.
+        include_velocity: Whether to include velocity speed vectors.
+        include_runtime_metrics: Whether to include internal kernel diagnostics.
+    """
+
+    include_pose: bool = False
+    include_bbox: bool = True
+    include_velocity: bool = False
+    include_runtime_metrics: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """Root configuration combining all subsystem configurations.
 
@@ -128,6 +159,8 @@ class AppConfig:
         tracker: Tracker algorithm configuration.
         runner: Runner execution configuration.
         analytics: Analytics modules configuration.
+        logging: Enterprise logging detail level configuration.
+        serialization: Field inclusion configuration.
     """
 
     camera: CameraConfig
@@ -136,3 +169,5 @@ class AppConfig:
     tracker: TrackerConfig
     runner: RunnerConfig
     analytics: AnalyticsConfig
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    serialization: SerializationConfig = field(default_factory=SerializationConfig)

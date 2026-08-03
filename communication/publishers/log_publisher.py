@@ -11,10 +11,15 @@ import datetime
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional, TextIO
 
-from camera_analytics.communication.models import StandardAnalyticsEvent
+from camera_analytics.communication.models import (
+    AnalyticsEventSerializer,
+    EventDetailLevel,
+    StandardAnalyticsEvent,
+)
 from camera_analytics.communication.publisher_base import EventPublisher
 from camera_analytics.communication.registry import PublisherRegistry
 
@@ -27,6 +32,7 @@ class LogPublisher(EventPublisher):
 
     Features:
         - Auto-creation of output directory.
+        - Configurable detail level ('summary', 'standard', 'full').
         - Dynamic date-based filename rotation (e.g. `events_20260723.jsonl`).
         - UTF-8 encoding with append mode.
         - Thread-safe file flush.
@@ -37,6 +43,7 @@ class LogPublisher(EventPublisher):
         log_dir: Output log directory path.
         filename_pattern: Log file name pattern (supports `{date}`).
         rotate_daily: Whether to auto-rotate log files daily.
+        detail_level: Configurable detail level ('summary', 'standard', 'full').
     """
 
     def __init__(
@@ -46,11 +53,13 @@ class LogPublisher(EventPublisher):
         log_dir: str = "logs",
         filename_pattern: str = "events_{date}.jsonl",
         rotate_daily: bool = True,
+        detail_level: str = "summary",
     ) -> None:
         super().__init__(name=name, enabled=enabled)
         self._log_dir = Path(log_dir)
         self._filename_pattern = filename_pattern
         self._rotate_daily = rotate_daily
+        self._detail_level = detail_level
 
         self._file_handle: Optional[TextIO] = None
         self._current_file_path: Optional[Path] = None
@@ -67,6 +76,7 @@ class LogPublisher(EventPublisher):
             self._log_dir = Path(config["log_dir"])
 
         self._rotate_daily = config.get("rotate_daily", self._rotate_daily)
+        self._detail_level = config.get("detail_level", self._detail_level)
 
     def on_start(self) -> None:
         """Create log directory and open initial log file stream."""
@@ -74,11 +84,11 @@ class LogPublisher(EventPublisher):
         self._open_log_file()
 
     def publish(self, event: StandardAnalyticsEvent, serialized_payload: str) -> bool:
-        """Write single JSON line payload to log file.
+        """Write single JSON line payload to log file formatted according to detail_level.
 
         Args:
             event: StandardAnalyticsEvent instance.
-            serialized_payload: Pre-serialized JSON string.
+            serialized_payload: Pre-serialized JSON string (fallback).
 
         Returns:
             True if written successfully, False otherwise.
@@ -86,6 +96,10 @@ class LogPublisher(EventPublisher):
         if not self._is_running or not self._enabled:
             return False
 
+        # Format payload according to configured detail level
+        formatted_line = AnalyticsEventSerializer.serialize(event, detail_level=self._detail_level)
+
+        t_start = time.time()
         with self._lock:
             try:
                 # Check for daily rotation
@@ -98,11 +112,14 @@ class LogPublisher(EventPublisher):
                     self._open_log_file()
 
                 if self._file_handle is not None:
-                    self._file_handle.write(serialized_payload + "\n")
+                    self._file_handle.write(formatted_line + "\n")
+                    latency_ms = (time.time() - t_start) * 1000.0
+                    self.record_publish_metrics(success=True, latency_ms=latency_ms)
                     return True
             except Exception as exc:
                 self._is_healthy = False
                 logger.error("LogPublisher '%s' write error: %s", self.name, exc)
+                self.record_publish_metrics(success=False, latency_ms=0.0)
                 return False
 
         return False
@@ -153,4 +170,4 @@ class LogPublisher(EventPublisher):
         self._file_handle = open(file_path, mode="a", encoding="utf-8")
         self._current_file_path = file_path
         self._is_healthy = True
-        logger.info("LogPublisher '%s' opened log file: %s", self.name, file_path)
+        logger.info("LogPublisher '%s' opened log file: %s (Detail Level: %s)", self.name, file_path, self._detail_level)

@@ -99,6 +99,8 @@ class RuntimeState:
 
         # Extract zones from camera
         self._zones: dict[str, Zone] = dict(camera.zones)
+        from camera_analytics.core.zone_engine import ZoneEngine
+        self._zone_engine = ZoneEngine()
 
         # Archive pruning config
         self._archive_prune_interval: int = int(
@@ -144,6 +146,11 @@ class RuntimeState:
     def zones(self) -> dict[str, Zone]:
         """Dictionary of zones (keyed by zone_id)."""
         return self._zones
+
+    @property
+    def zone_engine(self) -> Any:
+        """ZoneEngine spatial evaluator instance."""
+        return self._zone_engine
 
     # --- Timing ---
 

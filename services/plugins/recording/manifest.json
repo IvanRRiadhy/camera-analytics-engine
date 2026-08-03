@@ -1,0 +1,18 @@
+{
+    "service_name": "recording",
+    "version": "1.0.0",
+    "description": "Enterprise Video Segment Recording Service Plugin",
+    "event_types": ["*"],
+    "capabilities": ["recording.segment", "recording.playback"],
+    "dependencies": [],
+    "execution_mode": "IMMEDIATE",
+    "priority": 5,
+    "enabled": true,
+    "entry_point": "plugin:RecordingServicePlugin",
+    "config_schema": {
+        "type": "object",
+        "properties": {
+            "segment_duration_sec": {"type": "number", "default": 60.0}
+        }
+    }
+}

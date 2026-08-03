@@ -2,20 +2,91 @@
 Diagnostics Collector Component.
 
 Provides DiagnosticsCollector class collecting frame execution latencies, per-plugin execution statistics,
-and calculating RuntimeHealth status in a thread-safe, passive manner without performing logging.
+RuntimeHealth status, and HardwareDiagnosticCollector for real-time CPU/GPU system metrics.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Optional
+
+import psutil
+import torch
 
 from camera_analytics.diagnostics.metrics import (
     PluginMetrics,
     RuntimeHealth,
     RuntimeMetrics,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class HardwareDiagnosticCollector:
+    """Thread-safe hardware resource metrics collector querying CPU, RAM, CUDA, and NVML GPU stats."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._has_nvml = False
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            self._pynvml = pynvml
+            self._has_nvml = True
+        except Exception:
+            self._has_nvml = False
+
+    def collect_system_metrics(self) -> dict[str, Any]:
+        """Collect current system CPU, RAM, and GPU hardware metrics.
+
+        Returns:
+            Dict containing cpu_usage_percent, memory_used_mb, memory_total_mb,
+            and gpu_metrics (gpu_usage_percent, vram_used_mb, vram_total_mb,
+            gpu_temperature_c, power_draw_watts).
+        """
+        with self._lock:
+            cpu_pct = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory()
+
+            gpu_metrics = {
+                "gpu_usage_percent": 0.0,
+                "vram_used_mb": 0,
+                "vram_total_mb": 0,
+                "gpu_temperature_c": 0.0,
+                "power_draw_watts": 0.0,
+            }
+
+            if torch.cuda.is_available():
+                try:
+                    device_id = 0
+                    vram_alloc = torch.cuda.memory_allocated(device_id) // (1024 * 1024)
+                    vram_total = torch.cuda.get_device_properties(device_id).total_memory // (1024 * 1024)
+                    gpu_metrics["vram_used_mb"] = vram_alloc
+                    gpu_metrics["vram_total_mb"] = vram_total
+                except Exception:
+                    pass
+
+                if self._has_nvml:
+                    try:
+                        handle = self._pynvml.nvmlDeviceGetHandleByIndex(0)
+                        util = self._pynvml.nvmlDeviceGetUtilizationRates(handle)
+                        temp = self._pynvml.nvmlDeviceGetTemperature(handle, self._pynvml.NVML_TEMPERATURE_GPU)
+                        power = self._pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
+
+                        gpu_metrics["gpu_usage_percent"] = float(util.gpu)
+                        gpu_metrics["gpu_temperature_c"] = float(temp)
+                        gpu_metrics["power_draw_watts"] = float(power)
+                    except Exception:
+                        pass
+
+            return {
+                "cpu_usage_percent": float(cpu_pct),
+                "memory_used_mb": mem.used // (1024 * 1024),
+                "memory_total_mb": mem.total // (1024 * 1024),
+                "gpu_metrics": gpu_metrics,
+            }
 
 
 class DiagnosticsCollector:
@@ -32,12 +103,7 @@ class DiagnosticsCollector:
         self._runtime_error_count: int = 0
 
     def record_frame(self, frame_latency_ms: float, dropped: bool = False) -> None:
-        """Record frame execution latency and dropped frame status.
-
-        Args:
-            frame_latency_ms: Execution latency of the frame in milliseconds.
-            dropped: Boolean flag indicating if frame was dropped.
-        """
+        """Record frame execution latency and dropped frame status."""
         with self._lock:
             self._total_frames += 1
             self._total_latency_ms += frame_latency_ms
@@ -52,19 +118,12 @@ class DiagnosticsCollector:
         execution_time_ms: float,
         events_count: int = 0,
     ) -> None:
-        """Record a successful module execution.
-
-        Args:
-            module_id: Unique string identifier of module.
-            execution_time_ms: Execution duration in milliseconds.
-            events_count: Number of analytics events generated.
-        """
+        """Record a successful module execution."""
         with self._lock:
             pm = self._plugin_metrics.setdefault(module_id, PluginMetrics(module_id=module_id))
             pm.executed_count += 1
             pm.published_events += events_count
 
-            # Update latency statistics
             if pm.executed_count == 1:
                 pm.min_execution_time_ms = execution_time_ms
                 pm.max_execution_time_ms = execution_time_ms
@@ -74,26 +133,17 @@ class DiagnosticsCollector:
                     pm.min_execution_time_ms = execution_time_ms
                 if execution_time_ms > pm.max_execution_time_ms:
                     pm.max_execution_time_ms = execution_time_ms
-                # Cumulative moving average
                 prev_total = pm.average_execution_time_ms * (pm.executed_count - 1)
                 pm.average_execution_time_ms = (prev_total + execution_time_ms) / pm.executed_count
 
     def record_plugin_skip(self, module_id: str) -> None:
-        """Record a module skip by ExecutionScheduler.
-
-        Args:
-            module_id: Unique string identifier of module.
-        """
+        """Record a module skip by ExecutionScheduler."""
         with self._lock:
             pm = self._plugin_metrics.setdefault(module_id, PluginMetrics(module_id=module_id))
             pm.skipped_count += 1
 
     def record_plugin_error(self, module_id: str) -> None:
-        """Record an exception isolated error for a module.
-
-        Args:
-            module_id: Unique string identifier of module.
-        """
+        """Record an exception isolated error for a module."""
         with self._lock:
             pm = self._plugin_metrics.setdefault(module_id, PluginMetrics(module_id=module_id))
             pm.error_count += 1
@@ -136,11 +186,7 @@ class DiagnosticsCollector:
             ]
 
     def evaluate_health(self) -> RuntimeHealth:
-        """Evaluate current RuntimeHealth status based on error counts and performance.
-
-        Returns:
-            RuntimeHealth enum status.
-        """
+        """Evaluate current RuntimeHealth status based on error counts and performance."""
         with self._lock:
             total_plugin_errors = sum(pm.error_count for pm in self._plugin_metrics.values())
 

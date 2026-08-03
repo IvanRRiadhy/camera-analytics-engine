@@ -1,0 +1,18 @@
+{
+  "plugin_id": "queue_detection",
+  "name": "Queue Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.queue_detection.module.QueueDetectionModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Evaluates line formation, queue track count, and wait times in queue zones, emitting QUEUE_ALERT events",
+  "capabilities": [
+    "ZONE",
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 17
+}

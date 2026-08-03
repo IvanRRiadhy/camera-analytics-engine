@@ -59,6 +59,7 @@ class Camera:
     height: int = 0
     fps: float = 0.0
     zones: dict[str, Zone] = field(default_factory=dict)
+    raw_zones_payload: list[dict[str, object]] = field(default_factory=list)
     status: CameraStatus = CameraStatus.OFFLINE
     description: str = ""
     metadata: dict[str, object] = field(default_factory=dict)

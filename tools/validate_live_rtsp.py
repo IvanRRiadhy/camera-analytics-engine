@@ -253,7 +253,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rtsp-url",
         type=str,
-        default="rtsp://admin:Admin1234!@192.168.1.202:554/snl/live/1/1",
+        default="rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
         help="RTSP camera stream URL or video file path for testing",
     )
     parser.add_argument("--max-frames", type=int, default=250, help="Maximum frames to run (None for long test)")

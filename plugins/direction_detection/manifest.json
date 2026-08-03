@@ -1,0 +1,17 @@
+{
+  "plugin_id": "direction_detection",
+  "name": "Direction Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.direction_detection.module.DirectionDetectionModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Evaluates track movement direction and cardinal heading against restricted directions, emitting DIRECTION_VIOLATION events",
+  "capabilities": [
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 16
+}

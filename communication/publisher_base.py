@@ -2,12 +2,13 @@
 Event Publisher Base Contract.
 
 Defines the abstract base class `EventPublisher` with full lifecycle contracts
-for external communication publishers (Log, MQTT, WebSocket, Kafka, RabbitMQ, etc.).
+for external communication publishers (Log, MQTT, REST HTTP, Console, RabbitMQ, etc.).
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 class EventPublisher(ABC):
     """Abstract Base Class for all external communication publishers in the platform.
 
-    Provides standard lifecycle management (initialize, start, publish, flush, stop, dispose)
-    and health status monitoring.
+    Provides standard lifecycle management (initialize, start, publish, flush, stop, dispose),
+    exponential retry mechanisms, and health status monitoring.
 
     Attributes:
         name: String identifier of the publisher instance.
@@ -33,6 +34,10 @@ class EventPublisher(ABC):
         self._is_initialized = False
         self._is_running = False
         self._is_healthy = True
+        self._success_count = 0
+        self._failure_count = 0
+        self._retry_count = 0
+        self._total_latency_ms = 0.0
 
     @property
     def name(self) -> str:
@@ -58,6 +63,20 @@ class EventPublisher(ABC):
     def is_healthy(self) -> bool:
         """Whether the publisher connection is healthy."""
         return self._is_healthy
+
+    def get_health(self) -> dict[str, Any]:
+        """Get publisher health status and operational metrics."""
+        avg_lat = self._total_latency_ms / max(1, self._success_count) if self._success_count > 0 else 0.0
+        return {
+            "name": self._name,
+            "enabled": self._enabled,
+            "running": self._is_running,
+            "healthy": self._is_healthy,
+            "success_count": self._success_count,
+            "failure_count": self._failure_count,
+            "retry_count": self._retry_count,
+            "avg_latency_ms": round(avg_lat, 2),
+        }
 
     # --- Lifecycle Contracts ---
 
@@ -92,6 +111,18 @@ class EventPublisher(ABC):
             True if published successfully, False otherwise.
         """
         pass
+
+    def record_publish_metrics(self, success: bool, latency_ms: float, retries: int = 0) -> None:
+        """Record telemetry metrics for a publish attempt."""
+        self._retry_count += retries
+        if success:
+            self._success_count += 1
+            self._total_latency_ms += latency_ms
+            self._is_healthy = True
+        else:
+            self._failure_count += 1
+            if self._failure_count > 5:
+                self._is_healthy = False
 
     def flush(self) -> None:
         """Flush pending buffered messages or file buffers to disk/network."""

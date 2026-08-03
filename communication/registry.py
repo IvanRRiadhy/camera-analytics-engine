@@ -24,23 +24,11 @@ class PublisherRegistry:
     """
 
     _registry: dict[str, Type[EventPublisher]] = {}
+    _known_classes: dict[str, Type[EventPublisher]] = {}
 
     @classmethod
     def register(cls, type_name: str) -> Callable[[Type[EventPublisher]], Type[EventPublisher]]:
-        """Decorator for registering an EventPublisher subclass under a unique type key.
-
-        Usage::
-
-            @PublisherRegistry.register("mqtt")
-            class MQTTPublisher(EventPublisher):
-                ...
-
-        Args:
-            type_name: String identifier for the publisher type (e.g. 'log', 'mqtt', 'kafka').
-
-        Returns:
-            Decorator function.
-        """
+        """Decorator for registering an EventPublisher subclass under a unique type key."""
 
         def decorator(publisher_cls: Type[EventPublisher]) -> Type[EventPublisher]:
             clean_type = type_name.strip().lower()
@@ -49,6 +37,7 @@ class PublisherRegistry:
                     "PublisherRegistry: Overwriting existing publisher registration for '%s'", clean_type
                 )
             cls._registry[clean_type] = publisher_cls
+            cls._known_classes[clean_type] = publisher_cls
             logger.debug(
                 "PublisherRegistry: Registered publisher '%s' -> %s", clean_type, publisher_cls.__name__
             )
@@ -57,33 +46,31 @@ class PublisherRegistry:
         return decorator
 
     @classmethod
+    def _ensure_defaults(cls) -> None:
+        """Ensure built-in publishers are registered if registry is empty."""
+        if not cls._registry:
+            if cls._known_classes:
+                cls._registry.update(cls._known_classes)
+            else:
+                try:
+                    import camera_analytics.communication.publishers.console_publisher  # noqa: F401
+                    import camera_analytics.communication.publishers.log_publisher      # noqa: F401
+                    import camera_analytics.communication.publishers.mqtt_publisher     # noqa: F401
+                    import camera_analytics.communication.publishers.rabbitmq_publisher # noqa: F401
+                    import camera_analytics.communication.publishers.rest_publisher     # noqa: F401
+                except Exception as exc:
+                    logger.debug("PublisherRegistry auto-import error: %s", exc)
+
+    @classmethod
     def get(cls, type_name: str) -> Optional[Type[EventPublisher]]:
-        """Retrieve registered EventPublisher class by string key.
-
-        Args:
-            type_name: String identifier of publisher type.
-
-        Returns:
-            Registered EventPublisher class, or None if not found.
-        """
+        """Retrieve registered EventPublisher class by string key."""
+        cls._ensure_defaults()
         clean_type = type_name.strip().lower()
         return cls._registry.get(clean_type)
 
     @classmethod
     def create(cls, type_name: str, name: Optional[str] = None, **kwargs: Any) -> EventPublisher:
-        """Instantiate a registered EventPublisher by type name.
-
-        Args:
-            type_name: String identifier of publisher type (e.g. 'log', 'mqtt').
-            name: Optional explicit instance name. Defaults to type_name.
-            **kwargs: Additional keyword arguments passed to publisher constructor.
-
-        Returns:
-            Instantiated EventPublisher instance.
-
-        Raises:
-            KeyError: If no publisher is registered under the given type name.
-        """
+        """Instantiate a registered EventPublisher by type name."""
         clean_type = type_name.strip().lower()
         publisher_cls = cls.get(clean_type)
         if publisher_cls is None:
@@ -101,11 +88,13 @@ class PublisherRegistry:
     @classmethod
     def list_registered(cls) -> list[str]:
         """List all registered publisher type string identifiers."""
+        cls._ensure_defaults()
         return sorted(list(cls._registry.keys()))
 
     @classmethod
     def is_registered(cls, type_name: str) -> bool:
         """Check if a publisher type is registered."""
+        cls._ensure_defaults()
         return type_name.strip().lower() in cls._registry
 
     @classmethod

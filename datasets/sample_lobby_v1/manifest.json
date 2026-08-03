@@ -1,0 +1,18 @@
+{
+  "dataset_id": "sample_lobby_v1",
+  "version": "1.0.0",
+  "name": "Main Entrance Lobby Walkthrough",
+  "description": "Pedestrian foot traffic, zone entrance, occupancy count, and queue formation scenarios.",
+  "scenario": "PEAK_FOOT_TRAFFIC",
+  "camera_profile": "1080p_wide_angle_indoor",
+  "tags": ["indoor", "lobby", "daylight", "high_density"],
+  "cameras": {
+    "cam_ent_sdk": {
+      "video_file": "video.mp4",
+      "resolution": [1728, 1080],
+      "fps": 12.1
+    }
+  },
+  "duration_seconds": 55.4,
+  "frame_count": 200
+}

@@ -345,6 +345,15 @@ class Pipeline:
             else []
         )
 
+        # Process ZoneEngine spatial evaluation
+        zone_list = list(self._runtime.zones.values())
+        zone_results = self._runtime.zone_engine.process(
+            tracks=self._runtime.track_manager.get_active(),
+            zones=zone_list,
+            frame_index=frame_id,
+            timestamp=self._runtime.elapsed_time,
+        )
+
         # Build FrameContext
         context = build_frame_context(
             frame_id=frame_id,
@@ -355,6 +364,7 @@ class Pipeline:
             tracks=self._runtime.track_manager.get_active(),
             zones=self._runtime.zones,
         )
+        object.__setattr__(context, "zone_results", zone_results)
 
         # Dispatch to modules
         frame_start = time.perf_counter()

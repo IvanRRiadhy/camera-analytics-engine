@@ -1,0 +1,18 @@
+{
+  "plugin_id": "zone_enter",
+  "name": "Zone Enter Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.zone_enter.module.ZoneEnterModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Detects track entry transitions into spatial zones and emits ZONE_ENTER events",
+  "capabilities": [
+    "ZONE",
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 11
+}

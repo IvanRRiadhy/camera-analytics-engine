@@ -1,0 +1,17 @@
+{
+  "plugin_id": "crowd_detection",
+  "name": "Crowd Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.crowd_detection.module.CrowdDetectionModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Evaluates track density and total track count across frame/zones, emitting CROWD_ALERT events",
+  "capabilities": [
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 15
+}

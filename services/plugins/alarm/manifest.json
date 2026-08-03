@@ -1,0 +1,18 @@
+{
+    "service_name": "alarm",
+    "version": "1.0.0",
+    "description": "Enterprise Alarm & Incident Management Service Plugin",
+    "event_types": ["*"],
+    "capabilities": ["alarm.engine", "incident.manager"],
+    "dependencies": [],
+    "execution_mode": "IMMEDIATE",
+    "priority": 10,
+    "enabled": true,
+    "entry_point": "plugin:AlarmServicePlugin",
+    "config_schema": {
+        "type": "object",
+        "properties": {
+            "correlation_window_sec": {"type": "number", "default": 60.0}
+        }
+    }
+}

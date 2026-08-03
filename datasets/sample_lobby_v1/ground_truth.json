@@ -1,0 +1,47 @@
+[
+  {
+    "frame_index": 5,
+    "timestamp": 0.41,
+    "event_type": "ZONE_OCCUPANCY",
+    "camera_id": "cam_ent_sdk",
+    "zone_id": "lobby_main",
+    "severity": "INFO",
+    "notes": "Initial track occupancy update"
+  },
+  {
+    "frame_index": 5,
+    "timestamp": 0.41,
+    "event_type": "ZONE_ENTER",
+    "camera_id": "cam_ent_sdk",
+    "track_id": 1,
+    "zone_id": "lobby_main",
+    "severity": "INFO",
+    "notes": "Track #1 enters main lobby zone"
+  },
+  {
+    "frame_index": 12,
+    "timestamp": 1.0,
+    "event_type": "DIRECTION_VIOLATION",
+    "camera_id": "cam_ent_sdk",
+    "track_id": 2,
+    "severity": "WARNING",
+    "notes": "Wrong direction movement detected"
+  },
+  {
+    "frame_index": 45,
+    "timestamp": 3.75,
+    "event_type": "CROWD_ALERT",
+    "camera_id": "cam_ent_sdk",
+    "severity": "CRITICAL",
+    "notes": "Crowd threshold reached (>=4 tracks)"
+  },
+  {
+    "frame_index": 80,
+    "timestamp": 6.6,
+    "event_type": "QUEUE_ALERT",
+    "camera_id": "cam_ent_sdk",
+    "zone_id": "lobby_main",
+    "severity": "WARNING",
+    "notes": "Queue line length threshold exceeded"
+  }
+]

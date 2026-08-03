@@ -1,0 +1,96 @@
+{
+  "dataset_id": "sample_lobby_v1",
+  "timestamp": "2026-07-28T03:28:43.993838+00:00",
+  "metrics": {
+    "overall": {
+      "true_positives": 3,
+      "false_positives": 30,
+      "false_negatives": 2,
+      "precision": 0.0909,
+      "recall": 0.6,
+      "f1_score": 0.1579,
+      "accuracy": 0.0857,
+      "avg_detection_delay_ms": 1018.33
+    },
+    "by_event_type": {
+      "ZONE_OCCUPANCY": {
+        "true_positives": 1,
+        "false_positives": 7,
+        "false_negatives": 0,
+        "precision": 0.125,
+        "recall": 1.0,
+        "f1_score": 0.2222,
+        "accuracy": 0.125,
+        "avg_detection_delay_ms": 0.0
+      },
+      "ZONE_ENTER": {
+        "true_positives": 1,
+        "false_positives": 9,
+        "false_negatives": 0,
+        "precision": 0.1,
+        "recall": 1.0,
+        "f1_score": 0.1818,
+        "accuracy": 0.1,
+        "avg_detection_delay_ms": 0.0
+      },
+      "DIRECTION_VIOLATION": {
+        "true_positives": 1,
+        "false_positives": 3,
+        "false_negatives": 0,
+        "precision": 0.25,
+        "recall": 1.0,
+        "f1_score": 0.4,
+        "accuracy": 0.25,
+        "avg_detection_delay_ms": 0.0
+      },
+      "CROWD_ALERT": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "accuracy": 0.0,
+        "avg_detection_delay_ms": 0.0
+      },
+      "QUEUE_ALERT": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "accuracy": 0.0,
+        "avg_detection_delay_ms": 0.0
+      },
+      "INFO": {
+        "true_positives": 0,
+        "false_positives": 6,
+        "false_negatives": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "accuracy": 0.0,
+        "avg_detection_delay_ms": 0.0
+      },
+      "ZONE_EXIT": {
+        "true_positives": 0,
+        "false_positives": 3,
+        "false_negatives": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "accuracy": 0.0,
+        "avg_detection_delay_ms": 0.0
+      }
+    },
+    "resources": {
+      "cpu_utilization_pct": 104.8,
+      "memory_mb": 1205.7,
+      "gpu_utilization_pct": 85.0,
+      "gpu_memory_mb": 1200.0,
+      "avg_latency_ms": 32.84,
+      "throughput_fps": 30.4
+    }
+  }
+}

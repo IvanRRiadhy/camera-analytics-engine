@@ -1,0 +1,13 @@
+{
+    "service_name": "investigation",
+    "version": "1.0.0",
+    "description": "Forensic Investigation & Evidence Packaging Service Plugin",
+    "event_types": ["ALARM_CREATED", "INCIDENT_CREATED"],
+    "capabilities": ["investigation.evidence"],
+    "dependencies": ["recording.segment", "alarm.engine"],
+    "execution_mode": "ASYNC",
+    "priority": 30,
+    "enabled": true,
+    "entry_point": "plugin:InvestigationServicePlugin",
+    "config_schema": {}
+}

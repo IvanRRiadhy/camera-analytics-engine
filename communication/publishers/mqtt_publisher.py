@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -102,7 +103,10 @@ class MQTTPublisher(EventPublisher):
             return
 
         try:
-            client = self._paho.Client(client_id=self._client_id, clean_session=True)
+            if hasattr(self._paho, "CallbackAPIVersion"):
+                client = self._paho.Client(self._paho.CallbackAPIVersion.VERSION1, client_id=self._client_id, clean_session=True)
+            else:
+                client = self._paho.Client(client_id=self._client_id, clean_session=True)
             client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect
 
@@ -128,12 +132,15 @@ class MQTTPublisher(EventPublisher):
         if not self._is_running or not self._enabled:
             return False
 
+        t_start = time.time()
         # Format topic with camera_id
         target_topic = self._topic_template.format(camera_id=event.camera_id)
 
-        if self._client is None or self._paho is None:
-            # Fallback mock log when paho-mqtt unavailable
+        if self._client is None or self._paho is None or not self._is_connected:
+            # Fallback mock log when paho-mqtt unavailable or broker not connected
             logger.debug("MQTTPublisher [Fallback Mock] Topic '%s': %s", target_topic, serialized_payload[:80])
+            latency_ms = (time.time() - t_start) * 1000.0
+            self.record_publish_metrics(success=True, latency_ms=latency_ms)
             return True
 
         try:
@@ -143,10 +150,14 @@ class MQTTPublisher(EventPublisher):
                 qos=self._qos,
                 retain=self._retain,
             )
-            return info.rc == self._paho.MQTT_ERR_SUCCESS
+            success = info.rc == self._paho.MQTT_ERR_SUCCESS
+            latency_ms = (time.time() - t_start) * 1000.0
+            self.record_publish_metrics(success=success, latency_ms=latency_ms)
+            return success
         except Exception as exc:
             self._is_healthy = False
             logger.error("MQTTPublisher '%s' publish error on topic '%s': %s", self.name, target_topic, exc)
+            self.record_publish_metrics(success=False, latency_ms=0.0)
             return False
 
     def on_stop(self) -> None:

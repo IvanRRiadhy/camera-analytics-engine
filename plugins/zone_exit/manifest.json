@@ -1,0 +1,18 @@
+{
+  "plugin_id": "zone_exit",
+  "name": "Zone Exit Detection Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.zone_exit.module.ZoneExitModule",
+  "author": "Enterprise Analytics Team",
+  "description": "Detects track exit transitions from spatial zones and emits ZONE_EXIT events",
+  "capabilities": [
+    "ZONE",
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "EVERY_FRAME",
+    "interval": 1
+  },
+  "priority": 12
+}

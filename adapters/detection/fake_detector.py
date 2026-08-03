@@ -34,6 +34,7 @@ from camera_analytics.models.detection import (
     Detection,
     DetectionClass,
     Keypoint,
+    PoseKeypoints,
 )
 
 if TYPE_CHECKING:
@@ -210,9 +211,9 @@ class FakeDetector(DetectorPort):
         confidence = self._rng.uniform(*self._confidence_range)
 
         # Optional pose keypoints
-        keypoints: list[Keypoint] = []
+        keypoints: PoseKeypoints | None = None
         if self._generate_pose:
-            keypoints = self._generate_keypoints(bbox)
+            keypoints = PoseKeypoints(keypoints=tuple(self._generate_keypoints(bbox)))
 
         return Detection(
             bbox=bbox,

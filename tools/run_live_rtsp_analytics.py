@@ -11,7 +11,7 @@ Usage::
 
 Or with custom parameters::
 
-    python -m camera_analytics.tools.run_live_rtsp_analytics --rtsp-url "rtsp://admin:Admin1234!@192.168.1.202:554/snl/live/1/1" --log-file "camera_analytics/logs/my_events.jsonl"
+    python -m camera_analytics.tools.run_live_rtsp_analytics --rtsp-url "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2" --log-file "camera_analytics/logs/my_events.jsonl"
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def setup_logging() -> None:
 
 
 def run_live_rtsp_analytics(
-    rtsp_url: str = "rtsp://admin:Admin1234!@192.168.1.202:554/snl/live/1/1",
+    rtsp_url: str = "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
     weights_path: str = "yolo26m-pose.pt",
     log_file_path: str = "camera_analytics/logs/live_events.jsonl",
     output_video_path: Optional[str] = None,
@@ -381,7 +381,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rtsp-url",
         type=str,
-        default="rtsp://admin:Admin1234!@192.168.1.202:554/snl/live/1/1",
+        default="rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
         help="RTSP camera stream connection URL",
     )
     parser.add_argument(

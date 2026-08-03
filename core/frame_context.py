@@ -69,6 +69,9 @@ class FrameContext:
     _person_tracks: tuple[Track, ...] = field(
         default=(), repr=False, hash=False, compare=False
     )
+    zone_results: Any = field(
+        default=None, repr=False, hash=False, compare=False
+    )
 
     # --- Track Queries ---
 

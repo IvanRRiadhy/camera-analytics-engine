@@ -17,9 +17,13 @@ from camera_analytics.sdk.models import (
 from camera_analytics.sdk.module import AnalyticsModule
 from camera_analytics.sdk.registry import AnalyticsRegistry, register_analytics
 
+from camera_analytics.sdk.events import EventSeverity, StandardAnalyticsEvent
+
 __all__ = [
     "AnalyticsEventType",
     "AnalyticsEvent",
+    "EventSeverity",
+    "StandardAnalyticsEvent",
     "AnalyticsContext",
     "AnalyticsResult",
     "AggregatedAnalyticsResult",

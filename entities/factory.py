@@ -168,8 +168,16 @@ class EntityFactory:
         )
 
     @classmethod
-    def create_zone_entity(cls, zone: Zone, current_state: ZoneState = ZoneState.OUTSIDE, dwell_frames: int = 0) -> ZoneEntity:
+    def create_zone_entity(cls, zone: Zone | str, current_state: ZoneState = ZoneState.OUTSIDE, dwell_frames: int = 0) -> ZoneEntity:
         """Create ZoneEntity from Zone model object."""
+        if isinstance(zone, str):
+            return ZoneEntity(
+                zone_id=zone,
+                zone_name=zone,
+                zone_type="region",
+                current_state=current_state,
+                dwell_frames=dwell_frames,
+            )
         zone_type_str = zone.zone_type.name.lower() if hasattr(zone.zone_type, "name") else str(zone.zone_type)
         return ZoneEntity(
             zone_id=zone.zone_id,
