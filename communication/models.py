@@ -247,6 +247,30 @@ class StandardAnalyticsEvent:
             }
 
 
+def _json_default(o: Any) -> Any:
+    """Fallback serializer for non-standard JSON types (numpy scalars, ndarrays, Path, dates)."""
+    try:
+        import numpy as np
+        if isinstance(o, np.generic):
+            return o.item()
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+    except ImportError:
+        pass
+
+    import pathlib
+    if isinstance(o, pathlib.Path):
+        return str(o)
+
+    if isinstance(o, (datetime.datetime, datetime.date)):
+        return o.isoformat()
+
+    if isinstance(o, (set, tuple)):
+        return list(o)
+
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
 class AnalyticsEventSerializer:
     """Thread-safe JSON Serializer for StandardAnalyticsEvent instances.
 
@@ -267,7 +291,12 @@ class AnalyticsEventSerializer:
         Returns:
             Single-line JSON string without raw newlines.
         """
-        return json.dumps(event.to_dict(detail_level=detail_level), ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(
+            event.to_dict(detail_level=detail_level),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        )
 
     @staticmethod
     def deserialize(json_str: str) -> dict[str, Any]:
