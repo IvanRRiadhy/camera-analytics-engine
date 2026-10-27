@@ -17,11 +17,13 @@ from typing import Any, Optional
 
 from camera_analytics.adapters.detection.yolo_pose_adapter import YOLOPoseAdapter
 from camera_analytics.adapters.tracking.botsort_adapter import BoTSORTAdapter
+from camera_analytics.bootstrap.resource_manager import RuntimeResourceManager
 from camera_analytics.communication.manager import CommunicationManager
 from camera_analytics.context.services import ContextBuilder
 from camera_analytics.context.unified_context import SharedAnalyticsContext
 from camera_analytics.core.ports import DetectorPort, TrackerPort
 from camera_analytics.ingestion.models import IngestedFrame
+from camera_analytics.logging import RuntimeLogger
 from camera_analytics.models.camera import Camera
 from camera_analytics.plugins.framework.context import PluginContext
 from camera_analytics.plugins.framework.manager import PluginManager
@@ -56,6 +58,7 @@ class InferencePipeline:
         zone_manager: Any = None,
         zone_engine: Any = None,
         aggregator: Any = None,
+        module_settings: Optional[dict[str, Any]] = None,
     ) -> None:
         self._camera = camera
         self._gpu_id = gpu_id
@@ -66,6 +69,11 @@ class InferencePipeline:
         self._tracker = tracker or self._create_default_tracker()
         self._comm_manager = comm_manager or CommunicationManager.get_instance()
         self._enabled_modules = enabled_modules or ["people_counting", "queue_detection", "loitering_detection"]
+        self._module_settings = module_settings or {}
+
+        # Instantiate per-pipeline HumanRuntime facade
+        from camera_analytics.core.human.runtime import HumanRuntime
+        self._human_runtime = HumanRuntime()
 
         # Centralized ContextBuilder executing shared services ONCE per frame
         self._context_builder = ContextBuilder(
@@ -73,6 +81,7 @@ class InferencePipeline:
             tracker=self._tracker,
             zone_manager=self._zone_manager,
             zone_engine=self._zone_engine,
+            human_runtime=self._human_runtime,
         )
 
         # Framework PluginManager setup
@@ -88,9 +97,11 @@ class InferencePipeline:
         try:
             import torch
             has_cuda = torch.cuda.is_available()
-            adapter = YOLOPoseAdapter(confidence_threshold=0.5, iou_threshold=0.45)
-            weights = "yolo26m-pose.pt" if (has_cuda and Path("yolo26m-pose.pt").exists()) else "yolov8n-pose.pt"
+            rm = RuntimeResourceManager.get_instance()
+            model_file = "yolo26m-pose.pt" if rm.resolve_model_path("yolo26m-pose.pt").exists() else "yolov8n-pose.pt"
+            weights = str(rm.resolve_model_path(model_file))
             device = "cuda" if has_cuda else "cpu"
+            adapter = YOLOPoseAdapter(confidence_threshold=0.5, iou_threshold=0.45)
             adapter.load(weights, device=device)
             return adapter
         except Exception as exc:
@@ -132,7 +143,8 @@ class InferencePipeline:
             pipeline_id=pipeline_id,
             camera_id=self._camera.camera_id,
             camera_name=self._camera.name,
-            rtsp_url=self._camera.source
+            rtsp_url=self._camera.source,
+            config=self._module_settings,
         )
 
         for mod_code in self._enabled_modules:
@@ -198,20 +210,21 @@ class InferencePipeline:
 
         pipeline_latency_ms = (time.time() - start_time) * 1000.0
 
-        # TAHAP 7: Detector & Tracker Provenance Audit (Every 5 seconds)
+        # TAHAP 7: Detector & Tracker Provenance Audit (Every 5 seconds in FORENSIC mode)
         now = time.time()
         if now - self._last_provenance_log_time >= 5.0:
             self._last_provenance_log_time = now
-            prov_msg = (
-                f"[PROVENANCE AUDIT]\n"
-                f"Camera            : {self._camera.camera_id}\n"
-                f"Detector          : {self._detector.__class__.__name__}\n"
-                f"Tracker           : {self._tracker.__class__.__name__}\n"
-                f"Inference         : SUCCESS\n"
-                f"Raw Detections    : {len(context.detections)}\n"
-                f"Active Tracks     : {len(context.tracks)}"
-            )
-            logger.info(prov_msg)
+            if RuntimeLogger.is_forensic():
+                prov_msg = (
+                    f"[PROVENANCE AUDIT]\n"
+                    f"Camera            : {self._camera.camera_id}\n"
+                    f"Detector          : {self._detector.__class__.__name__}\n"
+                    f"Tracker           : {self._tracker.__class__.__name__}\n"
+                    f"Inference         : SUCCESS\n"
+                    f"Raw Detections    : {len(context.detections)}\n"
+                    f"Active Tracks     : {len(context.tracks)}"
+                )
+                logger.info(prov_msg)
 
         return FrameProcessingSummary(
             frame_number=frame.frame_number,
@@ -226,6 +239,11 @@ class InferencePipeline:
         """Stop and release AI pipeline resources."""
         if not self._is_initialized:
             return
+
+        try:
+            self._plugin_manager.stop_all()
+        except Exception as p_exc:
+            logger.warning("Error stopping plugins in '%s': %s", self._camera.camera_id, p_exc)
 
         self._detector.release()
         self._tracker.reset()

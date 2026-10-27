@@ -96,15 +96,25 @@ class WindowManager:
             Pressed key string or None.
         """
         key = cv2.waitKey(delay_ms) & 0xFF
-        if key == 27 or key == ord("q"):
-            return "quit"
+        self.last_key = key
+        # Keypress processing: ESC or 'q' returns False (signal to exit)
+        if key in (27, ord("q"), ord("Q")):
+            return False
         elif key == ord("m"):
             return "toggle_metrics"
         elif key == ord("z"):
             return "toggle_zones"
         elif key == ord("s"):
             return "toggle_skeleton"
-        return None
+        return True
+
+    def show_studio_window(self, studio_canvas: np.ndarray, title: str = "AI Engine Development Studio") -> None:
+        """Display Engine Studio observability window alongside camera video windows."""
+        if title not in self._open_windows:
+            cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(title, 1024, 600)
+            self._open_windows.add(title)
+        cv2.imshow(title, studio_canvas)
 
     def close_all(self) -> None:
         """Destroy all OpenCV windows."""

@@ -32,15 +32,21 @@ class VideoSource(FrameSource):
         target_fps: Optional override for video playback FPS.
     """
 
-    def __init__(self, file_path: str, target_fps: Optional[float] = None) -> None:
+    def __init__(
+        self,
+        file_path: str,
+        target_fps: Optional[float] = None,
+        backend_factory: Optional[Any] = None,
+    ) -> None:
         self._file_path = file_path
         self._target_fps = target_fps
+        self._backend_factory = backend_factory
+        self._video_backend: Optional[Any] = None
         self._is_open = False
         self._current_frame_id = 0
         self._total_frames: Optional[int] = 100
         self._resolution = (1920, 1080)
         self._fps = target_fps if target_fps is not None else 30.0
-        self._cap: Any = None
         self._using_real_video = False
 
     @property
@@ -65,7 +71,7 @@ class VideoSource(FrameSource):
         )
 
     def open(self) -> None:
-        """Open the video file for reading."""
+        """Open the video file for reading via IVideoBackend strategy."""
         if self._is_open:
             return
 
@@ -74,32 +80,15 @@ class VideoSource(FrameSource):
 
         if file_path_obj.exists():
             try:
-                import cv2
-                cap = cv2.VideoCapture(str(file_path_obj))
-                if cap.isOpened():
-                    self._cap = cap
+                from camera_analytics.platform.backend_factories import VideoBackendFactory
+                factory = self._backend_factory or VideoBackendFactory()
+                backend = factory.create_backend(str(file_path_obj))
+                if backend.open(str(file_path_obj)):
+                    self._video_backend = backend
                     self._using_real_video = True
-                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1920
-                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1080
-                    video_fps = cap.get(cv2.CAP_PROP_FPS)
-                    total_f = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-                    self._resolution = (width, height)
-                    if self._target_fps is None and video_fps > 0:
-                        self._fps = float(video_fps)
-                    if total_f > 0:
-                        self._total_frames = total_f
-
-                    logger.info(
-                        "VideoSource opened real video '%s' (%dx%d @ %.1f FPS, %d frames)",
-                        self._file_path,
-                        width,
-                        height,
-                        self._fps,
-                        self._total_frames,
-                    )
-            except ImportError:
-                logger.warning("OpenCV cv2 not installed. VideoSource falling back to synthetic frames.")
+                    logger.info("VideoSource opened video file via %s: '%s'", backend.__class__.__name__, self._file_path)
+            except Exception as err:
+                logger.warning("VideoBackend creation failed: %s. Falling back to synthetic frames.", err)
                 self._using_real_video = False
 
         if not self._using_real_video:
@@ -119,9 +108,9 @@ class VideoSource(FrameSource):
         if not self._is_open:
             return None
 
-        # Real video decoding via OpenCV
-        if self._using_real_video and self._cap is not None:
-            ret, frame = self._cap.read()
+        # Real video decoding via IVideoBackend
+        if self._using_real_video and self._video_backend is not None:
+            ret, frame = self._video_backend.read_frame()
             if not ret or frame is None:
                 logger.info("VideoSource reached EOF: %s", self._file_path)
                 self.release()
@@ -162,12 +151,12 @@ class VideoSource(FrameSource):
         if not self._is_open:
             return
 
-        if self._cap is not None:
+        if self._video_backend is not None:
             try:
-                self._cap.release()
+                self._video_backend.release()
             except Exception:
                 pass
-            self._cap = None
+            self._video_backend = None
 
         self._is_open = False
         logger.info("VideoSource released: %s", self._file_path)

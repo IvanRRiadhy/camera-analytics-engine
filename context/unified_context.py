@@ -30,6 +30,9 @@ class SharedAnalyticsContext:
     detections: list[dict[str, Any]] = field(default_factory=list)
     tracks: list[dict[str, Any]] = field(default_factory=list)
     pose_keypoints: list[Any] = field(default_factory=list)
+    human_representations: dict[int, Any] = field(default_factory=dict)
+    human_states: dict[int, Any] = field(default_factory=dict)
+    human_summary: dict[str, Any] = field(default_factory=dict)
     zones: list[Any] = field(default_factory=list)
     zone_results: dict[str, Any] = field(default_factory=dict)
     spatial_snapshot: Any = None
@@ -42,6 +45,7 @@ class SharedAnalyticsContext:
             "tracking_time_ms": 0.0,
             "reid_time_ms": 0.0,
             "pose_time_ms": 0.0,
+            "human_runtime_time_ms": 0.0,
             "zone_mapping_time_ms": 0.0,
             "plugin_execution_time_ms": 0.0,
             "event_dispatch_time_ms": 0.0,

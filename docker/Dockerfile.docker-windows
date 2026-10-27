@@ -1,0 +1,64 @@
+# ==============================================================================
+# CCTV Analytics AI Engine - Dynamic Multi-Layer Dockerfile
+# Profile Target : docker-windows
+# App Version    : 2.2.1
+# Base Image     : pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+# ==============================================================================
+
+# --- LAYER 1: BASE SYSTEM & DEPENDENCIES LAYER ---
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+LABEL maintainer="CCTV Analytics AI Engine Team"
+LABEL version="2.2.1"
+LABEL profile="docker-windows"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    AIENGINE_VERSION="2.2.1" \
+    TARGET_ENVIRONMENT="JETSON_ARM64" \
+    PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
+
+WORKDIR /opt/aiengine
+
+# Clean third-party repositories and update apt with insecure fallbacks for deprecated GPG keys
+RUN sed -i '/kitware/d' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+RUN apt-get update -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true --allow-unauthenticated && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+    python3 python3-pip python3-dev \
+    curl ffmpeg libsm6 libxext6 libgl1-mesa-glx \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and build tools for Python 3.8 ARM64 compatibility
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install required Python packages using pre-compiled binaries
+# JetPack 4.6 Jetson Nano runs Python 3.6 (Ultralytics requires Python >=3.8, safetensors requires Rust)
+RUN if [ $(python3 -c "import sys; print(sys.version_info >= (3, 8))") = "True" ]; then         pip3 install --no-cache-dir --prefer-binary ultralytics opencv-python-headless numpy timm safetensors ;     else         pip3 install --no-cache-dir --prefer-binary opencv-python-headless numpy "timm<=0.5.4" pillow pyyaml ;     fi
+
+# --- LAYER 2: APPLICATION & PLUGINS LAYER ---
+COPY camera_analytics /opt/aiengine/camera_analytics
+COPY configs /opt/aiengine/configs
+COPY camera_analytics/docker/entrypoint.sh /opt/aiengine/entrypoint.sh
+RUN chmod +x /opt/aiengine/entrypoint.sh
+
+# --- LAYER 3: MODELS & ASSETS LAYER ---
+RUN mkdir -p /opt/aiengine/models
+COPY models/yolo26m-pose.pt /opt/aiengine/models/yolo26m-pose.pt
+COPY models/mivolo_v2.torchscript.pt /opt/aiengine/models/mivolo_v2.torchscript.pt
+
+# --- LAYER 4: RUNTIME & HEALTHCHECK CONFIGURATION ---
+RUN mkdir -p /opt/aiengine/logs \
+             /opt/aiengine/cache \
+             /opt/aiengine/runtime \
+             /opt/aiengine/output \
+             /opt/aiengine/recordings \
+             /opt/aiengine/exports
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python3 -m camera_analytics.main --verify || exit 1
+
+ENTRYPOINT ["/opt/aiengine/entrypoint.sh"]
+CMD []

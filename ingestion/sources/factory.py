@@ -13,6 +13,7 @@ from typing import Any, Optional
 from camera_analytics.ingestion.sources.base import VideoSource
 from camera_analytics.ingestion.sources.file_source import VideoFileSource
 from camera_analytics.ingestion.sources.rtsp_source import RTSPSource
+from camera_analytics.ingestion.sources.webcam_source import WebcamSource
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ def create_video_source(uri: str, params: Optional[dict[str, Any]] = None) -> Vi
     """Instantiate appropriate VideoSource subclass based on URI scheme.
 
     Rules:
+        - 'webcam://', 'webcam:', or pure single digit ("0", "1") -> WebcamSource
         - 'rtsp://' or 'rtsps://' -> RTSPSource
         - 'http://' or 'https://' -> RTSPSource (HTTP video stream / MJPEG)
         - Files (.mp4, .avi, .mkv, .sdp file paths) -> VideoFileSource
@@ -34,6 +36,10 @@ def create_video_source(uri: str, params: Optional[dict[str, Any]] = None) -> Vi
     """
     uri_clean = str(uri).strip()
 
+    if uri_clean.lower().startswith(("webcam://", "webcam:")) or (uri_clean.isdigit() and len(uri_clean) <= 2):
+        logger.info("SourceFactory: Selected WebcamSource for URI '%s'", uri_clean)
+        return WebcamSource(uri=uri_clean, params=params)
+
     if uri_clean.lower().startswith(("rtsp://", "rtsps://")):
         logger.info("SourceFactory: Selected RTSPSource for URI '%s'", uri_clean)
         return RTSPSource(uri=uri_clean, params=params)
@@ -43,4 +49,4 @@ def create_video_source(uri: str, params: Optional[dict[str, Any]] = None) -> Vi
         return RTSPSource(uri=uri_clean, params=params)
 
     logger.info("SourceFactory: Selected VideoFileSource for URI '%s'", uri_clean)
-    return VideoFileSource(file_path=uri_clean, params=params)
+    return VideoFileSource(uri=uri_clean, params=params)

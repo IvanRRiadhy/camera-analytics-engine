@@ -16,6 +16,7 @@ from camera_analytics.core.spatial.models import (
     GroundPointSource,
     PixelPoint,
     TrackSpatialState,
+    ZoneEventType,
     ZoneTransitionEvent,
 )
 from camera_analytics.core.spatial.state_repository import (

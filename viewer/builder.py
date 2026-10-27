@@ -8,9 +8,10 @@ into decoupled FramePresentation view models for UI visualizers.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from camera_analytics.adapters.bridge.inference_pipeline import FrameProcessingSummary
+if TYPE_CHECKING:
+    from camera_analytics.adapters.bridge.inference_pipeline import FrameProcessingSummary
 from camera_analytics.ingestion.models import IngestedFrame, IngestionMetrics
 from camera_analytics.models.camera import Camera
 from camera_analytics.viewer.models import (
@@ -77,7 +78,11 @@ class FramePresentationBuilder:
                         int(bbox_raw[3]),
                     )
                     box_color = (0, 255, 0)
-                    box_label = f"Track #{t_id} [{st_name}] ({conf:.2f})"
+                    # Extract Human Representation metrics if present
+                    human_reps = getattr(frame_context, "human_representations", {})
+                    rep = human_reps.get(t_id)
+                    q_tag = f" Q:{rep.face_quality_score:.2f}" if rep and rep.face_quality_score > 0 else ""
+                    box_label = f"Track #{t_id} [{st_name}] ({conf:.2f}){q_tag}"
 
                     # Extract Keypoints from track object graph for Skeleton Rendering
                     kps_obj = track.get("keypoints")
@@ -194,6 +199,14 @@ class FramePresentationBuilder:
         )
 
         sp_snap = getattr(frame_context, "spatial_snapshot", None) if frame_context is not None else None
+        # Map HumanState domain objects through HumanStatePresenter
+        human_vms = []
+        if frame_context is not None and hasattr(frame_context, "human_states") and frame_context.human_states:
+            from camera_analytics.viewer.presenter import HumanStatePresenter
+            presenter = HumanStatePresenter()
+            for h_state in frame_context.human_states.values():
+                human_vms.append(presenter.present(h_state))
+
         return FramePresentation(
             camera_id=camera.camera_id,
             camera_name=camera.name,
@@ -207,4 +220,5 @@ class FramePresentationBuilder:
             events=(),
             metrics=pres_metrics,
             spatial_snapshot=sp_snap,
+            human_view_models=tuple(human_vms),
         )

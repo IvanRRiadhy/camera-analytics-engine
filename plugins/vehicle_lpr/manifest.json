@@ -1,0 +1,19 @@
+{
+  "plugin_id": "vehicle_lpr",
+  "name": "Vehicle LPR Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.vehicle_lpr.plugin.VehicleLPRPlugin",
+  "author": "Enterprise Analytics Team",
+  "description": "Performs Indonesian vehicle license plate localization, character recognition, and temporal voting consensus",
+  "capabilities": [
+    "LPR",
+    "TRACKING",
+    "DETECTION"
+  ],
+  "execution_policy": {
+    "execution_mode": "STRIDED",
+    "interval": 3
+  },
+  "priority": 15
+}

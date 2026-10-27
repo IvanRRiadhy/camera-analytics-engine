@@ -119,6 +119,7 @@ class CameraAnalyticsSnapshot:
     queue_detection: Optional[QueueDetectionState] = None
     loitering: Optional[LoiteringState] = None
     zone_occupancy: Optional[ZoneOccupancyState] = None
+    human_state: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert typed snapshot to camelCase JSON dictionary for transport."""
@@ -173,7 +174,7 @@ class CameraAnalyticsSnapshot:
                 "occupancyByZone": self.zone_occupancy.occupancy_by_zone,
             }
 
-        return {
+        res: Dict[str, Any] = {
             "messageId": self.message_id,
             "schemaVersion": self.schema_version,
             "engineId": self.engine_id,
@@ -191,3 +192,8 @@ class CameraAnalyticsSnapshot:
             },
             "plugins": plugins_dict,
         }
+
+        if self.human_state is not None:
+            res["human"] = self.human_state
+
+        return res

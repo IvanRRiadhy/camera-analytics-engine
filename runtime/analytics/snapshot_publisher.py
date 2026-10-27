@@ -14,6 +14,7 @@ import time
 from typing import Any, Dict, Optional
 
 from camera_analytics.communication.manager import CommunicationManager
+from camera_analytics.logging import RuntimeLogger
 from camera_analytics.orchestration.pipeline_coordinator import PipelineCoordinator
 from camera_analytics.runtime.analytics.models import CameraAnalyticsSnapshot
 
@@ -72,7 +73,8 @@ class SnapshotPublisher:
 
     def _publish_loop(self) -> None:
         tick_count = 0
-        logger.info(
+        RuntimeLogger.forensic(
+            logger,
             "[FORENSIC] _publish_loop STARTED | Thread ID: %s | Thread Name: %s | Alive: %s | Daemon: %s | Running Flag: %s",
             threading.get_ident(),
             threading.current_thread().name,
@@ -83,7 +85,8 @@ class SnapshotPublisher:
         while self._running:
             tick_count += 1
             start_t = time.monotonic()
-            logger.info(
+            RuntimeLogger.forensic(
+                logger,
                 "[FORENSIC] === Tick #%d === | Time: %s | Thread ID: %s",
                 tick_count,
                 datetime.now(timezone.utc).isoformat(),
@@ -91,7 +94,7 @@ class SnapshotPublisher:
             )
             try:
                 published = self.publish_snapshots()
-                logger.info("[FORENSIC] Tick #%d Finished | Published Count: %d", tick_count, published)
+                RuntimeLogger.forensic(logger, "[FORENSIC] Tick #%d Finished | Published Count: %d", tick_count, published)
             except Exception as exc:
                 logger.error("[FORENSIC EXCEPTION] Exception in publish loop tick #%d: %s", tick_count, exc, exc_info=True)
 
@@ -101,12 +104,12 @@ class SnapshotPublisher:
 
     def _should_publish(self, camera_id: str, new_snapshot: CameraAnalyticsSnapshot) -> bool:
         if not self.enable_change_detection:
-            logger.info("[FORENSIC DECISION] Camera '%s': Change detection DISABLED -> DECISION: PUBLISH", camera_id)
+            RuntimeLogger.forensic(logger, "[FORENSIC DECISION] Camera '%s': Change detection DISABLED -> DECISION: PUBLISH", camera_id)
             return True
 
         last = self._last_published_snapshots.get(camera_id)
         if last is None:
-            logger.info("[FORENSIC DECISION] Camera '%s': Initial snapshot (last is None) -> DECISION: PUBLISH", camera_id)
+            RuntimeLogger.forensic(logger, "[FORENSIC DECISION] Camera '%s': Initial snapshot (last is None) -> DECISION: PUBLISH", camera_id)
             return True
 
         # Check plugin state equality
@@ -118,7 +121,8 @@ class SnapshotPublisher:
             and last.health.status == new_snapshot.health.status
         )
         if is_same:
-            logger.info(
+            RuntimeLogger.forensic(
+                logger,
                 "[FORENSIC DECISION] Camera '%s': Snapshot IS IDENTICAL to previous snapshot -> DECISION: SKIP | People: %s | Queue: %s | Loitering: %s | Health: %s",
                 camera_id,
                 new_snapshot.people_counting,
@@ -128,7 +132,8 @@ class SnapshotPublisher:
             )
             return False
         else:
-            logger.info(
+            RuntimeLogger.forensic(
+                logger,
                 "[FORENSIC DECISION] Camera '%s': Snapshot HAS CHANGED -> DECISION: PUBLISH | Prev People: %s -> New People: %s",
                 camera_id,
                 last.people_counting,
@@ -144,7 +149,7 @@ class SnapshotPublisher:
             self.comm_manager = CommunicationManager.get_instance()
 
         pipelines = self.coordinator.pipeline_manager.list_pipelines()
-        logger.info("[FORENSIC ENGINE] Total Active Pipelines Found: %d", len(pipelines))
+        RuntimeLogger.forensic(logger, "[FORENSIC ENGINE] Total Active Pipelines Found: %d", len(pipelines))
         if not pipelines:
             return 0
 

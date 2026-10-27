@@ -114,3 +114,4 @@ class FramePresentation:
     events: tuple[PresentedEvent, ...] = ()
     metrics: Optional[PresentedMetrics] = None
     spatial_snapshot: Any = None
+    human_view_models: tuple[Any, ...] = ()

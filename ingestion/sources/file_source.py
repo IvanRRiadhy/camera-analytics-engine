@@ -28,18 +28,25 @@ class VideoFileSource(VideoSource):
         if self._is_open and self._cap is not None:
             return True
 
-        if not Path(self._uri).exists():
+        # Check if URI is integer webcam index (e.g. "0" or 0)
+        is_webcam = False
+        dev_idx = 0
+        if isinstance(self._uri, int) or (isinstance(self._uri, str) and self._uri.isdigit()):
+            is_webcam = True
+            dev_idx = int(self._uri)
+
+        if not is_webcam and not Path(self._uri).exists():
             logger.error("VideoFileSource: File path '%s' does not exist.", self._uri)
             return False
 
         try:
-            self._cap = cv2.VideoCapture(self._uri)
+            self._cap = cv2.VideoCapture(dev_idx if is_webcam else self._uri)
             if self._cap.isOpened():
                 self._is_open = True
-                logger.info("VideoFileSource: Successfully opened video file '%s'", self._uri)
+                logger.info("VideoFileSource: Successfully opened video source '%s'", self._uri)
                 return True
             else:
-                logger.warning("VideoFileSource: Failed to open video file '%s'", self._uri)
+                logger.warning("VideoFileSource: Failed to open video source '%s'", self._uri)
                 self._is_open = False
                 return False
         except Exception as exc:
@@ -53,6 +60,17 @@ class VideoFileSource(VideoSource):
 
         ret, frame = self._cap.read()
         if not ret or frame is None:
+            # Check loop parameter (default True for live demo, False if forensic/batch mode)
+            should_loop = self._params.get("loop", True) if self._params else True
+            if self._params and self._params.get("forensic_mode", False):
+                should_loop = False
+
+            if should_loop and isinstance(self._uri, str) and not self._uri.isdigit():
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = self._cap.read()
+                if ret and frame is not None:
+                    self._packet_count += 1
+                    return StreamPacket(payload=frame, is_eof=False, timestamp=time.time())
             return StreamPacket(payload=None, is_eof=True)
 
         self._packet_count += 1
@@ -61,6 +79,7 @@ class VideoFileSource(VideoSource):
             timestamp=time.time(),
             packet_index=self._packet_count,
             is_eof=False,
+            metadata={"source_type": "file", "uri": self._uri},
         )
 
     def close(self) -> None:

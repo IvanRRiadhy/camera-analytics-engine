@@ -54,6 +54,26 @@ def parse_args() -> argparse.Namespace:
         help="Run AI Engine in Standalone Mode using local configuration file.",
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Run pre-flight environment & distribution verification audit and exit cleanly.",
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run 10-checkpoint end-to-end self-test diagnostic suite and exit cleanly.",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Execute automated runtime benchmark session and generate performance reports.",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Generate HTML and Markdown benchmark & quality gate reports.",
+    )
+    parser.add_argument(
         "--mode",
         type=str,
         default="enterprise",
@@ -86,9 +106,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-level",
         type=str,
-        default="INFO",
+        default=None,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging verbosity level.",
+        help="Override logging verbosity level",
+    )
+    parser.add_argument(
+        "--max-run-sec",
+        type=float,
+        default=None,
+        help="Maximum run duration in seconds before graceful exit",
     )
     return parser.parse_args()
 
@@ -98,13 +124,14 @@ def setup_logging(level_name: str = "INFO", engine_id: str = "engine_edge_01") -
     from logging.handlers import RotatingFileHandler
     import os
     from datetime import datetime
+    from camera_analytics.bootstrap.resource_manager import RuntimeResourceManager
 
     level = getattr(logging, level_name.upper(), logging.INFO)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join("logs", date_str, engine_id)
-    os.makedirs(log_dir, exist_ok=True)
-    runtime_log_path = os.path.join(log_dir, "runtime.log")
+    rm = RuntimeResourceManager.get_instance()
+    log_dir = rm.resolve_writable_dir(os.path.join("logs", date_str, engine_id))
+    runtime_log_path = log_dir / "runtime.log"
 
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -127,8 +154,41 @@ def setup_logging(level_name: str = "INFO", engine_id: str = "engine_edge_01") -
 
 
 def main(max_run_sec: Optional[float] = None) -> int:
+    try:
+        import torch
+        torch.multiprocessing.freeze_support()
+    except Exception:
+        pass
+
     args = parse_args()
-    setup_logging(args.log_level)
+    if args.max_run_sec is not None:
+        max_run_sec = args.max_run_sec
+    setup_logging(args.log_level or "INFO")
+
+    if args.verify:
+        return 0
+
+    if args.self_test:
+        from camera_analytics.bootstrap.self_test import RuntimeSelfTest
+        passed = RuntimeSelfTest.run_self_test()
+        return 0 if passed else 1
+
+    if args.benchmark or args.report:
+        from camera_analytics.runtime.benchmark.benchmark_runner import RuntimeBenchmarkRunner
+        from camera_analytics.runtime.benchmark.html_reporter import BenchmarkHtmlReporter
+        from camera_analytics.runtime.benchmark.parity_validator import RuntimeParityValidator
+
+        runner = RuntimeBenchmarkRunner()
+        res = runner.execute_benchmark()
+
+        validator = RuntimeParityValidator()
+        p_res = validator.evaluate_parity(res)
+
+        reporter = BenchmarkHtmlReporter()
+        report_path = reporter.generate_html_report(res)
+
+        logger.info("[+] Benchmark Quality Gate: %s (Violations: %d)", "PASSED" if p_res.passed else "FAILED", len(p_res.violations))
+        return 0 if p_res.passed else 1
 
     # Resolve Runtime Mode and Configuration Provider Strategy
     from camera_analytics.bootstrap.factory import ConfigurationProviderFactory, RuntimeModeResolver
@@ -145,8 +205,22 @@ def main(max_run_sec: Optional[float] = None) -> int:
         return 1
 
     context = boot_res.context
+    
+    # Configure RuntimeLogger Mode from loaded ConfigurationSnapshot
+    from camera_analytics.logging import RuntimeLogger
+    log_mode = "production"
+    if hasattr(context, "configuration") and context.configuration:
+        raw_cfg = getattr(context.configuration, "raw_data", {})
+        if isinstance(raw_cfg, dict):
+            eng_cfg = raw_cfg.get("engine", {})
+            if isinstance(eng_cfg, dict) and "logging" in eng_cfg:
+                log_mode = eng_cfg["logging"].get("mode", "production")
+            elif isinstance(eng_cfg, dict) and eng_cfg.get("runtime_audit_mode"):
+                log_mode = "forensic"
+    RuntimeLogger.set_mode(log_mode)
+
     coordinator: PipelineCoordinator = context.services.get_required("pipeline_coordinator", PipelineCoordinator)
-    logger.info("[+] Engine Context initialized. Engine ID: '%s' (Mode: %s)", context.engine_id, context.environment)
+    logger.info("[+] Engine Context initialized. Engine ID: '%s' (Mode: %s | LoggingMode: %s)", context.engine_id, context.environment, RuntimeLogger.get_mode().value.upper())
 
     # 2. Instantiate Ingestion Workers, AI Execution Workers & Viewer Provider
     pipelines = coordinator.pipeline_manager.list_pipelines()
@@ -191,12 +265,18 @@ def main(max_run_sec: Optional[float] = None) -> int:
             metrics_accumulator=acc,
         )
 
+        analytics_cfg = getattr(getattr(pipe_inst.config, "app", None), "analytics", None)
+        enabled_mods = list(analytics_cfg.enabled_modules) if analytics_cfg and analytics_cfg.enabled_modules else None
+        mod_settings = dict(analytics_cfg.module_settings) if analytics_cfg and analytics_cfg.module_settings else {}
+
         inf_pipeline = InferencePipeline(
             camera=camera,
             gpu_id=pipe_inst.gpu_id,
             zone_manager=pipe_inst.zone_manager,
             zone_engine=pipe_inst.zone_engine,
             aggregator=pipe_inst.aggregator,
+            enabled_modules=enabled_mods,
+            module_settings=mod_settings,
         )
 
         e_worker = PipelineExecutionWorker(
@@ -252,6 +332,16 @@ def main(max_run_sec: Optional[float] = None) -> int:
 
     snapshot_publisher.start()
 
+    # Instantiate StudioLauncher lifecycle manager
+    from camera_analytics.studio.launcher import StudioLauncher
+    studio_cfg = getattr(context, "config", {})
+    if not studio_cfg and hasattr(context, "configuration") and hasattr(context.configuration, "runtime"):
+        studio_cfg = getattr(context.configuration.runtime, "studio", {})
+    if not isinstance(studio_cfg, dict):
+        studio_cfg = {"enabled": True, "launch_with_engine": True}
+    studio_launcher = StudioLauncher(config=studio_cfg)
+    studio_launcher.initialize()
+
     logger.info("[+] All workers and 1Hz Runtime Snapshot Publisher started successfully. Engine running!")
     if args.headless:
         logger.info("[+] Engine running in HEADLESS mode. Press Ctrl+C to stop.")
@@ -274,9 +364,21 @@ def main(max_run_sec: Optional[float] = None) -> int:
                     if presentation is not None:
                         viewer_provider.render_presentation(presentation)
 
-                # Poll keyboard events
+                # Update & Render AI Engine Development Studio Window via StudioLauncher
+                if studio_launcher.enabled:
+                    studio_launcher.update_and_render(
+                        window_manager=viewer_provider.window_manager,
+                        execution_workers=execution_workers,
+                        context=context,
+                    )
+
+                # Poll keyboard events & forward hotkeys to StudioLauncher
                 event_cmd = viewer_provider.window_manager.process_events(delay_ms=10)
-                if event_cmd == "quit":
+                raw_key = getattr(viewer_provider.window_manager, "last_key", 255)
+                if raw_key != 255 and studio_launcher.enabled:
+                    studio_launcher.handle_key(raw_key)
+
+                if event_cmd is False or event_cmd == "quit":
                     logger.info("[!] User pressed 'q' / ESC key. Shutting down...")
                     break
             else:

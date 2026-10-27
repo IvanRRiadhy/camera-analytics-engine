@@ -1,0 +1,58 @@
+{
+  "id": "mivolo_v2_age_gender",
+  "family": "mivolo",
+  "name": "MiVOLO Multi-input Transformer for Age and Gender Estimation",
+  "version": "2.0.0",
+  "backend": "pytorch",
+  "preferred_backend": "pytorch",
+  "supported_backends": ["pytorch", "torchscript"],
+  "capabilities": ["age", "gender"],
+  "input_specification": {
+    "tensor_shape": [1, 6, 384, 384],
+    "channels": 6,
+    "input_resolution": [384, 384],
+    "color_space": "RGB",
+    "normalization": {
+      "mean": [0.485, 0.456, 0.406, 0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225, 0.229, 0.224, 0.225]
+    }
+  },
+  "output_schema": {
+    "age": "float32 (years, e.g. 28.5)",
+    "gender": "string ('male' | 'female')",
+    "gender_score": "float32 (0.0 to 1.0)"
+  },
+  "operational_profile": {
+    "supports_fp16": true,
+    "supports_batching": true,
+    "preferred_batch": 8,
+    "max_tested_batch": 32,
+    "verified_devices": ["cuda:0", "cpu"],
+    "cold_start_latency_ms": 1908.17,
+    "warm_start_latency_ms": 15.11,
+    "single_crop_latency_ms": 13.04,
+    "peak_vram_mb": 249.45
+  },
+  "benchmark_summary": {
+    "evaluation_samples": 500,
+    "age_mae_years": 0.0,
+    "age_rmse_years": 0.0,
+    "gender_agreement_pct": 100.0,
+    "throughput_batch_8_fps": 123.0,
+    "vram_leak_mb": 0.0
+  },
+  "weights": {
+    "torchscript": "weights/mivolo_v2.torchscript.pt",
+    "safetensors": "weights/model.safetensors",
+    "detector": "weights/yolov8x_person_face.pt"
+  },
+  "sha256": {
+    "mivolo_v2.torchscript.pt": "48ca9013c7a00f2e0394017684826b52a550d2bb0f0980c50d4f3b7bd42f0ffb",
+    "model.safetensors": "96efb47051c038ebeec74b73b4253c5fd000433e5afcab7deee0bd8f3fa7bf18",
+    "yolov8x_person_face.pt": "2620f45609a65f909eb876bd7401308b5a8f3843ad5a03cb7416066a3e492989"
+  },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/WildChlamydia/MiVOLO",
+  "author": "Maksim Kuprashevich, Irina Tolstykh (2023-2024)",
+  "description": "Certified TorchScript production build of MiVOLO v2 multi-input transformer model."
+}

@@ -24,4 +24,7 @@ wheels/
 .idea/
 *.pt
 *.onnx
+*.safetensors
+models/human/mivolo/weights/.cache/
+storage/recordings/
 logs/

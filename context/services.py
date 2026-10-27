@@ -274,12 +274,14 @@ class ContextBuilder:
         tracker: Any = None,
         zone_manager: Any = None,
         zone_engine: Any = None,
+        human_runtime: Any = None,
     ) -> None:
         self.detection_service = DetectionService(detector)
         self.tracking_service = TrackingService(tracker)
         self.pose_service = PoseService()
         self.zone_manager = zone_manager
         self.zone_engine = zone_engine
+        self.human_runtime = human_runtime
 
     def build_context(
         self,
@@ -315,6 +317,19 @@ class ContextBuilder:
         keypoints, pose_ms = self.pose_service.process(frame, tracks)
         ctx.pose_keypoints = keypoints
         ctx.stage_timings_ms["pose_time_ms"] = round(pose_ms, 2)
+
+        # 3.5 Human Runtime Stage (Representation, Quality, State Cache)
+        if self.human_runtime is not None:
+            human_res = self.human_runtime.process_frame(
+                tracks=tracks,
+                frame=frame,
+                frame_index=frame_index,
+                timestamp_utc=ctx.timestamp_utc,
+            )
+            ctx.human_representations = human_res.representations
+            ctx.human_states = human_res.states
+            ctx.human_summary = human_res.summary
+            ctx.stage_timings_ms["human_runtime_time_ms"] = human_res.elapsed_ms
 
         # 4. Spatial Geometry & Zone Engine Stage
         start_spatial_t = time.perf_counter()

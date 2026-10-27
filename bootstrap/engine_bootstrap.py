@@ -107,9 +107,39 @@ class EngineBootstrap:
             self._state = BootstrapState.VALIDATING
             self._validate_snapshot(snapshot)
 
-            # 2. INITIALIZING Services, Catalog, Publishers
+            # 2. INITIALIZING Platform, Services, Catalog, Publishers
             self._state = BootstrapState.INITIALIZING
             service_registry = ServiceRegistry()
+
+            # Platform Abstraction & Strategy Factories Activation
+            from camera_analytics.platform.backend_factories import InferenceBackendFactory, VideoBackendFactory
+            from camera_analytics.platform.factory import PlatformFactory
+
+            platform_obj = PlatformFactory.create_platform()
+            platform_obj.initialize()
+            platform_obj.verify_environment()
+
+            v_factory = VideoBackendFactory(platform_obj.capabilities)
+            inf_factory = InferenceBackendFactory(platform_obj.capabilities)
+
+            service_registry.register("platform", platform_obj)
+            service_registry.register("capability_registry", platform_obj.capabilities)
+            service_registry.register("video_backend_factory", v_factory)
+            service_registry.register("inference_backend_factory", inf_factory)
+            service_registry.register("resource_manager", platform_obj.get_resource_manager())
+
+            v_backend_name = "GStreamerBackend" if platform_obj.capabilities.has_capability("gstreamer") else "OpenCVBackend"
+            inf_backend_name = "TorchBackend"
+
+            logger.info("==========================================================")
+            logger.info("               CCTV ANALYTICS AI ENGINE                   ")
+            logger.info("==========================================================")
+            logger.info(" OS Platform        : %s", platform_obj.capabilities.get_metadata("os_platform", platform_obj.name))
+            logger.info(" Target Environment : %s", platform_obj.target_environment)
+            logger.info(" Video Backend      : %s", v_backend_name)
+            logger.info(" Inference Backend  : %s", inf_backend_name)
+            logger.info(" Build Target       : windows-release")
+            logger.info("==========================================================")
 
             # Build & register CameraCatalog
             camera_catalog = self._build_camera_catalog(snapshot)

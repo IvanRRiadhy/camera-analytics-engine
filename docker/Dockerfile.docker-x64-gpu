@@ -1,0 +1,58 @@
+# ==============================================================================
+# CCTV Analytics AI Engine - Dynamic Multi-Layer Dockerfile
+# Profile Target : docker-x64-gpu
+# App Version    : 2.2.1
+# Base Image     : nvidia/cuda:12.1.0-runtime-ubuntu22.04
+# ==============================================================================
+
+# --- LAYER 1: BASE SYSTEM & DEPENDENCIES LAYER ---
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+LABEL maintainer="CCTV Analytics AI Engine Team"
+LABEL version="2.2.1"
+LABEL profile="docker-x64-gpu"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    AIENGINE_VERSION="2.2.1" \
+    TARGET_ENVIRONMENT="JETSON_ARM64" \
+    PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
+
+WORKDIR /opt/aiengine
+
+# Install system dependencies (Python, FFmpeg, GStreamer, libGL)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev \
+    curl ffmpeg libsm6 libxext6 libgl1-mesa-glx \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install required Python packages (PyTorch pre-installed in NVIDIA base image)
+RUN pip3 install --no-cache-dir ultralytics opencv-python-headless numpy timm safetensors
+
+# --- LAYER 2: APPLICATION & PLUGINS LAYER ---
+COPY camera_analytics /opt/aiengine/camera_analytics
+COPY configs /opt/aiengine/configs
+COPY camera_analytics/docker/entrypoint.sh /opt/aiengine/entrypoint.sh
+RUN chmod +x /opt/aiengine/entrypoint.sh
+
+# --- LAYER 3: MODELS & ASSETS LAYER ---
+RUN mkdir -p /opt/aiengine/models
+COPY models/yolo26m-pose.pt /opt/aiengine/models/yolo26m-pose.pt
+COPY models/mivolo_v2.torchscript.pt /opt/aiengine/models/mivolo_v2.torchscript.pt
+
+# --- LAYER 4: RUNTIME & HEALTHCHECK CONFIGURATION ---
+RUN mkdir -p /opt/aiengine/logs \
+             /opt/aiengine/cache \
+             /opt/aiengine/runtime \
+             /opt/aiengine/output \
+             /opt/aiengine/recordings \
+             /opt/aiengine/exports
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python3 -m camera_analytics.main --verify || exit 1
+
+ENTRYPOINT ["/opt/aiengine/entrypoint.sh"]
+CMD []

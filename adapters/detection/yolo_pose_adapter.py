@@ -128,9 +128,13 @@ class YOLOPoseAdapter(DetectorPort):
             ) from err
 
         # 2. Path validation if local file
-        path_obj = Path(model_path)
+        from camera_analytics.bootstrap.resource_manager import RuntimeResourceManager
+        rm = RuntimeResourceManager.get_instance()
+        resolved_model_path = str(rm.resolve_model_path(model_path))
+        path_obj = Path(resolved_model_path)
         if model_path.endswith(".pt") and not path_obj.exists() and not model_path.startswith("yolo"):
             raise FileNotFoundError(f"YOLO model weights file not found: {model_path}")
+        model_path = resolved_model_path
 
         # 3. Device management & CUDA fallback check
         target_device = device.lower()

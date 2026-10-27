@@ -9,12 +9,13 @@ Complete drawing engine rendering FramePresentation view models onto image frame
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import cv2
 import numpy as np
 
+from camera_analytics.logging import RuntimeLogger
 from camera_analytics.viewer.models import FramePresentation
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,21 @@ _COCO_SKELETON_CONNECTIONS = (
 
 
 @dataclass(slots=True)
+class HumanDebugOptions:
+    """Debug options for Human Analytics overlays."""
+
+    show_head_roi: bool = False
+    show_face_roi: bool = False
+    show_torso_roi: bool = False
+    show_face_quality: bool = False
+    show_processing_state: bool = True
+    show_attribute_locks: bool = True
+    show_demographics: bool = False
+    show_expression: bool = False
+    show_ppe: bool = False
+
+
+@dataclass(slots=True)
 class RenderOptions:
     """Boolean toggles for controlling visual element rendering."""
 
@@ -42,15 +58,23 @@ class RenderOptions:
     draw_track_id: bool = True
     draw_track_history: bool = True
     draw_zones: bool = True
-    draw_metrics: bool = True
+    draw_metrics: bool = False
     draw_events: bool = True
+    draw_debug_panel: bool = False
+    human_options: HumanDebugOptions = field(default_factory=HumanDebugOptions)
 
 
 class OverlayRenderer:
     """Complete drawing engine rendering FramePresentation view models onto OpenCV images."""
 
-    def __init__(self, options: Optional[RenderOptions] = None) -> None:
+    def __init__(
+        self,
+        options: Optional[RenderOptions] = None,
+        overlay_provider: Optional[Any] = None,
+    ) -> None:
         self.options = options or RenderOptions()
+        from camera_analytics.viewer.overlay_provider import RuntimeOverlayProvider
+        self.overlay_provider = overlay_provider or RuntimeOverlayProvider()
 
     def render(self, presentation: FramePresentation) -> np.ndarray:
         """Render complete presentation overlay on image copy.
@@ -140,26 +164,58 @@ class OverlayRenderer:
                     thickness=2,
                 )
 
-                # Header Tag Label
+                # High-Contrast Multi-Line HumanState Overlay Pill Label
                 if self.options.draw_track_id and box.label:
-                    label_size, _ = cv2.getTextSize(box.label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                    lbl_w, lbl_h = label_size
-                    cv2.rectangle(
-                        canvas,
-                        (box.x1, max(0, box.y1 - lbl_h - 10)),
-                        (box.x1 + lbl_w + 6, max(lbl_h + 10, box.y1)),
-                        color=box.color_rgb,
-                        thickness=-1,
+                    lines = [box.label]
+
+                    # Read HumanStatePresenter View Model if available on presentation or context
+                    if hasattr(presentation, "human_view_models") and presentation.human_view_models:
+                        for vm in presentation.human_view_models:
+                            if vm.track_id == box.track_id:
+                                lines = [
+                                    f"Track #{vm.track_id} | {vm.gender.capitalize()} ({vm.gender_confidence:.0%}) | {vm.ema_age:.1f}y",
+                                    f"Status: [{vm.lifecycle}] | FaceQ: {vm.face_quality_score:.2f}",
+                                ]
+                                break
+
+                    import threading
+                    RuntimeLogger.forensic(
+                        logger,
+                        "[FORENSIC STAGE 10 - OVERLAY] Thread: %d | TrackID: %d | DrawnLines: %s",
+                        threading.get_ident(),
+                        box.track_id,
+                        lines,
                     )
-                    cv2.putText(
-                        canvas,
-                        box.label,
-                        (box.x1 + 3, max(lbl_h + 4, box.y1 - 4)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        (0, 0, 0),
-                        2,
-                    )
+
+                    # Compute semi-transparent background pill bounds
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    scale = 0.5
+                    thick = 1
+                    line_h = 18
+                    max_w = 0
+                    for line in lines:
+                        (tw, _), _ = cv2.getTextSize(line, font, scale, thick)
+                        if tw > max_w:
+                            max_w = tw
+
+                    pill_w = max_w + 12
+                    pill_h = (len(lines) * line_h) + 8
+                    py1 = max(0, box.y1 - pill_h - 4)
+                    py2 = py1 + pill_h
+                    px1 = box.x1
+                    px2 = px1 + pill_w
+
+                    # Alpha blend dark background overlay pill
+                    sub_roi = canvas[py1:py2, px1:px2]
+                    if sub_roi.shape[0] > 0 and sub_roi.shape[1] > 0:
+                        dark_bg = np.zeros_like(sub_roi)
+                        cv2.addWeighted(sub_roi, 0.3, dark_bg, 0.7, 0, sub_roi)
+                        cv2.rectangle(canvas, (px1, py1), (px2, py2), color=box.color_rgb, thickness=1)
+
+                    # Draw text lines in crisp high-contrast white
+                    for idx, line in enumerate(lines):
+                        ty = py1 + 14 + (idx * line_h)
+                        cv2.putText(canvas, line, (px1 + 6, ty), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
 
         # 6. Render HUD Runtime Metrics with Semi-Transparent Background Box
         if self.options.draw_metrics and presentation.metrics:
@@ -208,9 +264,48 @@ class OverlayRenderer:
                     font,
                     font_scale,
                     (0, 255, 255),
-                    thickness,
                     cv2.LINE_AA,
                 )
                 y0 += line_height
+
+        # 7. Render Standalone AI Runtime Debug Panel (Multi-Track Multi-Module / HumanState Telemetry)
+        if self.options.draw_debug_panel:
+            cam_id = getattr(presentation.metrics, "camera_id", "default_camera") if presentation.metrics else "default_camera"
+            all_debug = self.overlay_provider.get_all_camera_debug_info(cam_id)
+            if all_debug:
+                panel_lines = ["--- HUMAN TEMPORAL INTELLIGENCE PANEL ---"]
+                for t_id, infos in all_debug.items():
+                    panel_lines.append(f"[Track #{t_id}]")
+                    for info in infos:
+                        status_str = f"{info.status}" + (f" ({info.skip_reason})" if info.skip_reason else "")
+                        panel_lines.append(f"  • {info.module_id}: {status_str}")
+                        if info.status in ("EXECUTED", "STABLE", "LEARNING"):
+                            if info.attributes:
+                                attr_str = ", ".join(f"{k}={v}" for k, v in info.attributes.items())
+                                panel_lines.append(f"    State: {attr_str}")
+                            if info.raw_outputs:
+                                raw_str = str(info.raw_outputs)
+                                if len(raw_str) > 35:
+                                    raw_str = raw_str[:32] + "..."
+                                panel_lines.append(f"    Raw: {raw_str}")
+                            panel_lines.append(f"    Lat: {info.latency_ms:.1f}ms | Qual: {info.face_quality:.2f}")
+
+                # Draw side panel box on the right
+                h_c, w_c = canvas.shape[:2]
+                p_w = 340
+                p_x1 = max(10, w_c - p_w - 10)
+                p_y1 = 10
+                p_y2 = min(h_c - 10, p_y1 + (len(panel_lines) * 18) + 20)
+                
+                overlay_p = canvas.copy()
+                cv2.rectangle(overlay_p, (p_x1, p_y1), (w_c - 10, p_y2), (20, 20, 20), -1)
+                cv2.addWeighted(overlay_p, 0.75, canvas, 0.25, 0, canvas)
+                cv2.rectangle(canvas, (p_x1, p_y1), (w_c - 10, p_y2), (0, 255, 200), 1)
+
+                py = p_y1 + 18
+                for pline in panel_lines:
+                    color = (0, 255, 200) if pline.startswith("---") else ((255, 255, 255) if pline.startswith("[") else (200, 200, 200))
+                    cv2.putText(canvas, pline, (p_x1 + 8, py), cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA)
+                    py += 18
 
         return canvas

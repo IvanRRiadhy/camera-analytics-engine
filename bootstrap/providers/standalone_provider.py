@@ -41,12 +41,16 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
     """ConfigurationProvider loading local JSON configuration files for Standalone Mode."""
 
     def __init__(self, config_file_path: str = "configs/standalone.json") -> None:
-        self._config_file_path = Path(config_file_path)
+        from camera_analytics.bootstrap.resource_manager import RuntimeResourceManager
+        rm = RuntimeResourceManager.get_instance()
+        self._config_file_path = rm.resolve_config_path(config_file_path)
 
     def load(self) -> ConfigurationSnapshot:
         """Load and parse local configuration file into ConfigurationSnapshot."""
         if not self._config_file_path.exists():
-            fallback_paths = [Path("configs/production.json"), Path("configs/sample_runtime.json")]
+            from camera_analytics.bootstrap.resource_manager import RuntimeResourceManager
+            rm = RuntimeResourceManager.get_instance()
+            fallback_paths = [rm.resolve_config_path("configs/production.json"), rm.resolve_config_path("configs/sample_runtime.json")]
             for f_path in fallback_paths:
                 if f_path.exists():
                     self._config_file_path = f_path
@@ -117,10 +121,24 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
         cameras_map: Dict[str, Camera] = {}
         pipeline_configs: Dict[str, PipelineConfiguration] = {}
 
+        # Module settings (top-level or per-camera)
+        global_module_settings = raw_data.get("module_settings", {})
+        if not isinstance(global_module_settings, dict):
+            global_module_settings = {}
+
         for cam_data in cameras_list:
             cam_id = cam_data.get("camera_id", "cam_default")
             cam_name = cam_data.get("name", f"Camera {cam_id}")
-            rtsp_url = cam_data.get("rtsp_url", "0")
+
+            src_val = cam_data.get("source")
+            rtsp_val = cam_data.get("rtsp_url")
+            if src_val is not None and rtsp_val is not None and str(src_val) != str(rtsp_val):
+                logger.warning(
+                    "StandaloneConfigurationProvider: Camera '%s' defines both 'source' ('%s') and 'rtsp_url' ('%s') with conflicting values. Precedence order: 'source' > 'rtsp_url' > '0'. Using 'source'.",
+                    cam_id, src_val, rtsp_val
+                )
+
+            rtsp_url = src_val if src_val is not None else (rtsp_val if rtsp_val is not None else "0")
             fps = float(cam_data.get("fps", 30.0))
             device = cam_data.get("device", "cuda:0")
 
@@ -159,6 +177,10 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
             )
             cameras_map[cam_id] = camera_obj
 
+            cam_module_settings = dict(global_module_settings)
+            if isinstance(cam_data.get("module_settings"), dict):
+                cam_module_settings.update(cam_data["module_settings"])
+
             # Construct Pipeline Configuration for this Camera
             app_cfg = AppConfig(
                 camera=CameraConfig(
@@ -172,7 +194,8 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                 detector=DetectorConfig(device=device),
                 tracker=TrackerConfig(),
                 analytics=AnalyticsConfig(
-                    enabled_modules=tuple(cam_data.get("enabled_modules", ["people_counting", "queue_detection"]))
+                    enabled_modules=tuple(cam_data.get("enabled_modules", ["people_counting", "queue_detection", "loitering_detection"])),
+                    module_settings=cam_module_settings,
                 ),
                 runner=RunnerConfig(),
             )

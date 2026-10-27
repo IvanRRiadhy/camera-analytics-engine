@@ -47,6 +47,17 @@ class SnapshotBuilder:
         loiter_st = repository.get_state("loitering", LoiteringState)
         occ_st = repository.get_state("zoneOccupancy", ZoneOccupancyState)
 
+        # Extract Human Domain Telemetry via HumanSnapshotMapper
+        human_payload: Optional[dict[str, Any]] = None
+        if context is not None:
+            h_summary = getattr(context, "human_summary", {})
+            h_reps = getattr(context, "human_representations", {})
+            h_states = getattr(context, "human_states", {})
+
+            if h_summary or h_reps or h_states:
+                from camera_analytics.core.human.snapshot_mapper import HumanSnapshotMapper
+                human_payload = HumanSnapshotMapper.map_snapshot_payload(h_summary, h_reps, h_states)
+
         snapshot = CameraAnalyticsSnapshot(
             camera_id=camera_id,
             pipeline_id=pipeline_id,
@@ -57,6 +68,7 @@ class SnapshotBuilder:
             queue_detection=queue_st,
             loitering=loiter_st,
             zone_occupancy=occ_st,
+            human_state=human_payload,
         )
 
         return snapshot
