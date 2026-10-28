@@ -52,7 +52,7 @@ def test_vehicle_lpr_cctv_integration():
         "frame_stride": 3,
         "min_observations": 2,
         "min_winner_share": 0.50,
-        "min_plate_width_px": 50.0,
+        "min_plate_width_px": 80.0,
         "min_sharpness": 10.0,
         "lock_timeout_s": 0.2,
     }

@@ -579,3 +579,83 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         self.assertEqual(evts[0].attributes["plate_text"], "L1048BU")
         self.assertTrue(evts[0].attributes["finalized_on_expiry"])
         self.assertEqual(evts[0].attributes["observation_count"], 3)
+
+    def test_default_min_plate_width_px_is_80(self):
+        """Verify default min_plate_width_px is 80.0 and filters crops narrower than 80px."""
+        cfg = VehicleLPRConfig()
+        self.assertEqual(cfg.min_plate_width_px, 80.0)
+        self.assertEqual(VehicleLPRConfig.from_dict({}).min_plate_width_px, 80.0)
+
+        plugin = VehicleLPRPlugin()
+        plugin.state = PluginState.RUNNING
+        # Box of raw width 60px -> padded width ~69px < 80px -> skipped_too_small
+        plugin.detector = StubPlateDetector(boxes=[(100.0, 100.0, 160.0, 140.0, 0.90)])
+        plugin.reader = StubCharReader(raw_text="B1234ABC")
+        frame = np.ones((720, 1280, 3), dtype=np.uint8) * 128
+        evts = plugin.process(SharedAnalyticsContext(frame=frame, frame_index=0, camera_id="cam_w80", pipeline_id="pipe_w80"))
+        self.assertEqual(len(evts), 0)
+        stats = plugin.get_stats()
+        self.assertEqual(stats["detections_total"], 1)
+        self.assertEqual(stats["skipped_too_small"], 1)
+
+    def test_detection_accounting_identity_with_forced_lock_timeouts(self):
+        """Verify detection identity TotalDet = ReadOk + Skips(Small + Blur + Dark + Consensus + ReaderLock + NoRead) holds even with detector lock timeout."""
+        from camera_analytics.plugins.vehicle_lpr.model_cache import SharedModelCache
+
+        plugin = VehicleLPRPlugin()
+        plugin.state = PluginState.RUNNING
+        plugin.config.min_sharpness = 0.0
+        plugin.config.min_plate_width_px = 50.0
+        plugin.detector = StubPlateDetector(boxes=[(100.0, 100.0, 250.0, 150.0, 0.90)])
+        plugin.reader = StubCharReader(raw_text="B1234ABC")
+        frame = np.ones((720, 1280, 3), dtype=np.uint8) * 128
+        ctx = SharedAnalyticsContext(frame=frame, frame_index=0, camera_id="cam_id_test", pipeline_id="pipe_id_test")
+
+        # 1. Force detector lock timeout by acquiring detector lock
+        acquired = SharedModelCache.detector_inference_lock.acquire(blocking=False)
+        self.assertTrue(acquired)
+        try:
+            plugin.config.lock_timeout_s = 0.001
+            evts = plugin.process(ctx)
+            self.assertEqual(len(evts), 0)
+        finally:
+            SharedModelCache.detector_inference_lock.release()
+
+        stats = plugin.get_stats()
+        expected_total = (
+            stats["reader_ok"]
+            + stats["skipped_too_small"]
+            + stats["skipped_too_blurry"]
+            + stats["skipped_too_dark"]
+            + stats["skipped_after_consensus"]
+            + stats["skipped_lock_timeout"]
+            + stats["reader_no_read"]
+        )
+        self.assertEqual(stats["detections_total"], expected_total)
+        self.assertEqual(stats["detections_total"], 0)
+        self.assertEqual(stats["skipped_lock_timeout"], 0)
+        self.assertEqual(stats["frames_skipped_lock_timeout"], 1)
+
+        # 2. Force reader lock timeout by acquiring reader lock
+        acquired_rdr = SharedModelCache.reader_inference_lock.acquire(blocking=False)
+        self.assertTrue(acquired_rdr)
+        try:
+            evts = plugin.process(ctx)
+            self.assertEqual(len(evts), 0)
+        finally:
+            SharedModelCache.reader_inference_lock.release()
+
+        stats2 = plugin.get_stats()
+        expected_total2 = (
+            stats2["reader_ok"]
+            + stats2["skipped_too_small"]
+            + stats2["skipped_too_blurry"]
+            + stats2["skipped_too_dark"]
+            + stats2["skipped_after_consensus"]
+            + stats2["skipped_lock_timeout"]
+            + stats2["reader_no_read"]
+        )
+        self.assertEqual(stats2["detections_total"], expected_total2)
+        self.assertEqual(stats2["detections_total"], 1)
+        self.assertEqual(stats2["skipped_lock_timeout"], 1)
+        self.assertEqual(stats2["frames_skipped_lock_timeout"], 1)

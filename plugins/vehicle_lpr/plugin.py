@@ -50,6 +50,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
             "reader_no_read": 0,
             "reader_ok": 0,
             # Sub-counters / secondary metrics outside the detections_total sum:
+            "frames_skipped_lock_timeout": 0,
             "skipped_cooldown": 0,
             "events_emitted": 0,
             "stride_skipped_frames": 0,
@@ -272,7 +273,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                 acquired_det = SharedModelCache.detector_inference_lock.acquire(timeout=self.config.lock_timeout_s)
                 call_timings["detector_lock_wait_ms"] = round((time.perf_counter() - t0_det_wait) * 1000.0, 3)
                 if not acquired_det:
-                    self.stats["skipped_lock_timeout"] += 1
+                    self.stats["frames_skipped_lock_timeout"] += 1
                     return []
                 try:
                     t0_det_inf = time.perf_counter()
@@ -591,7 +592,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
         pipe_id = getattr(self.context, "pipeline_id", "default")
         stats_dict = self.get_stats()
         logger.info(
-            "[Plugin:Vehicle LPR] Shutdown Stats [%s]: TotalDet=%d, ReadOk=%d, Emitted=%d | Widths: min=%.1f, med=%.1f, max=%.1f | NormSharp: min=%.1f, med=%.1f, max=%.1f | RawSharp: min=%.1f, med=%.1f, max=%.1f | Latencies: avg=%.2fms, p95=%.2fms, max=%.2fms | Skips: Small=%d, Blur=%d, Dark=%d, Consensus=%d, Lock=%d, NoRead=%d | CooldownSuppressed=%d",
+            "[Plugin:Vehicle LPR] Shutdown Stats [%s]: TotalDet=%d, ReadOk=%d, Emitted=%d | Widths: min=%.1f, med=%.1f, max=%.1f | NormSharp: min=%.1f, med=%.1f, max=%.1f | RawSharp: min=%.1f, med=%.1f, max=%.1f | Latencies: avg=%.2fms, p95=%.2fms, max=%.2fms | Skips: Small=%d, Blur=%d, Dark=%d, Consensus=%d, Lock=%d, NoRead=%d | CooldownSuppressed=%d | DetectorLockSkips=%d",
             pipe_id,
             stats_dict.get("detections_total", 0),
             stats_dict.get("reader_ok", 0),
@@ -615,6 +616,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
             stats_dict.get("skipped_lock_timeout", 0),
             stats_dict.get("reader_no_read", 0),
             stats_dict.get("skipped_cooldown", 0),
+            stats_dict.get("frames_skipped_lock_timeout", 0),
         )
         self._voting_engines.clear()
         self._cooldown_map.clear()

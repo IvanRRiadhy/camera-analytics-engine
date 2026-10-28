@@ -41,7 +41,7 @@ class VehicleLPRConfig:
     frame_stride: int = 3
     pad_ratio_x: float = 0.08
     pad_ratio_y: float = 0.15
-    min_plate_width_px: float = 50.0
+    min_plate_width_px: float = 80.0
     sharpness_ref_width: int = 160
     min_sharpness: float = 10.0
     min_brightness: float = 25.0
