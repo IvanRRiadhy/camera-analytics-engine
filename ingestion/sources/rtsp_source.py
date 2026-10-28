@@ -5,8 +5,10 @@ RTSP Video Source implementation.
 from __future__ import annotations
 
 import logging
+import socket
 import time
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import cv2
 
@@ -22,13 +24,66 @@ class RTSPSource(VideoSource):
         super().__init__(uri=uri, params=params)
         self._cap: Optional[cv2.VideoCapture] = None
         self._packet_count = 0
+        p = self._params
+        self._open_timeout_sec = float(
+            p.get("open_timeout_sec", p.get("rtsp_open_timeout_sec", p.get("connect_timeout_sec", 5.0)))
+        )
+        self._read_timeout_sec = float(
+            p.get("read_timeout_sec", p.get("rtsp_read_timeout_sec", 5.0))
+        )
+        self._tcp_precheck_timeout_sec = float(p.get("tcp_precheck_timeout_sec", 2.0))
+
+    def _tcp_precheck(self) -> bool:
+        """Perform a fast TCP socket reachability check before invoking FFmpeg."""
+        try:
+            parsed = urlsplit(self._uri)
+            host = parsed.hostname
+            if not host:
+                return True
+            scheme = (parsed.scheme or "rtsp").lower()
+            default_port = 322 if scheme == "rtsps" else (443 if scheme == "https" else (80 if scheme == "http" else 554))
+            port = parsed.port or default_port
+        except Exception:
+            return True
+
+        t0 = time.perf_counter()
+        try:
+            with socket.create_connection((host, port), timeout=self._tcp_precheck_timeout_sec):
+                return True
+        except OSError as exc:
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            logger.warning(
+                "RTSPSource: TCP pre-check failed for '%s' (%s:%s, timeout=%.1fs, elapsed=%.0fms): %s",
+                self._uri,
+                host,
+                port,
+                self._tcp_precheck_timeout_sec,
+                elapsed_ms,
+                exc,
+            )
+            return False
 
     def open(self) -> bool:
         if self._is_open and self._cap is not None:
             return True
 
+        if not self._tcp_precheck():
+            self._is_open = False
+            return False
+
+        open_timeout_ms = int(self._open_timeout_sec * 1000)
+        read_timeout_ms = int(self._read_timeout_sec * 1000)
         try:
-            self._cap = cv2.VideoCapture(self._uri, cv2.CAP_FFMPEG)
+            self._cap = cv2.VideoCapture(
+                self._uri,
+                cv2.CAP_FFMPEG,
+                [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
+                    open_timeout_ms,
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC,
+                    read_timeout_ms,
+                ],
+            )
             if self._cap.isOpened():
                 self._is_open = True
                 logger.info("RTSPSource: Successfully connected to RTSP stream '%s'", self._uri)
