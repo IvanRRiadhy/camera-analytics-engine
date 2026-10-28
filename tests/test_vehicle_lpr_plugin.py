@@ -496,7 +496,7 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         self.assertEqual(tracker.next_track_id, 2)
 
     def test_voting_tie_consensus_and_expiry(self):
-        """B.5: Test voting tie never emits, consensus requires > 0.50 share and >= 3 obs, and expiry emits once."""
+        """B.5: Test voting tie never emits, consensus requires > 0.50 share and >= 3 obs, and expiry enforces winner_share threshold."""
         plugin = VehicleLPRPlugin()
         plugin.state = PluginState.RUNNING
         plugin.config.min_observations = 3
@@ -533,7 +533,7 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         self.assertEqual(evts[0].attributes["winner_share"], 0.6667)
         self.assertFalse(evts[0].attributes.get("finalized_on_expiry", False))
 
-        # Now test track expiry emission on another track that doesn't reach consensus before losing track
+        # Now test track expiry on another track that doesn't reach consensus before losing track (winner_share <= min_winner_share)
         plugin2 = VehicleLPRPlugin()
         plugin2.state = PluginState.RUNNING
         plugin2.config.min_observations = 3
@@ -547,7 +547,7 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
 
         # Feed 3 observations that don't reach strict > 0.50 consensus:
         # Obs 1: B1234AA, Obs 2: B1234BB, Obs 3: B1234CC (1:1:1 tie, winner_share = 0.33)
-        # But for expiry, let's test a valid winner with >= 3 obs: 3 votes of 'L1048BU', but suppose winner_share threshold was 0.80
+        # For expiry, test when winner_share does not exceed min_winner_share: suppose winner_share threshold was 0.80
         plugin2.config.min_winner_share = 0.80
         # Obs 1: L1048BU, Obs 2: L1048BU, Obs 3: L1018BU (2/3 = 0.67 < 0.80 -> no live consensus)
         box2 = (50.0, 50.0, 200.0, 120.0, 0.90)
@@ -573,12 +573,11 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         # Stride 2 lost
         evts = plugin2.process(SharedAnalyticsContext(frame=frame, frame_index=12, camera_id="cam_exp", pipeline_id="pipe_exp"))
         self.assertEqual(len(evts), 0)
-        # Stride 3 lost -> track expires -> emit_on_track_expiry triggers!
+        # Stride 3 lost -> track expires -> winner_share 0.67 <= 0.80 -> must NOT emit, clean up engine
         evts = plugin2.process(SharedAnalyticsContext(frame=frame, frame_index=15, camera_id="cam_exp", pipeline_id="pipe_exp"))
-        self.assertEqual(len(evts), 1)
-        self.assertEqual(evts[0].attributes["plate_text"], "L1048BU")
-        self.assertTrue(evts[0].attributes["finalized_on_expiry"])
-        self.assertEqual(evts[0].attributes["observation_count"], 3)
+        self.assertEqual(len(evts), 0)
+        self.assertNotIn("L1048BU", plugin2._cooldown_map)
+        self.assertEqual(len(plugin2._voting_engines), 0)
 
     def test_default_min_plate_width_px_is_80(self):
         """Verify default min_plate_width_px is 80.0 and filters crops narrower than 80px."""
@@ -659,3 +658,71 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         self.assertEqual(stats2["detections_total"], 1)
         self.assertEqual(stats2["skipped_lock_timeout"], 1)
         self.assertEqual(stats2["frames_skipped_lock_timeout"], 1)
+
+    def test_track_expiry_requires_winner_share_above_threshold(self):
+        """Track expiry emission must enforce winner_share > min_winner_share identical to live consensus."""
+        from unittest.mock import MagicMock
+        from camera_analytics.plugins.vehicle_lpr.tracker import PlateTrack
+
+        # a) track expires, total_votes 12, status GRAMMAR_VALID, winner_share 0.25
+        # -> no event, no cooldown entry, engine removed from _voting_engines
+        plugin_a = VehicleLPRPlugin()
+        plugin_a.state = PluginState.RUNNING
+        plugin_a.config.emit_on_track_expiry = True
+        plugin_a.config.min_observations = 3
+        plugin_a.config.min_winner_share = 0.50
+        plugin_a.config.cooldown_s = 60.0
+
+        exp_track_a = PlateTrack(track_id=10, bbox=(100.0, 100.0, 300.0, 180.0), conf=0.95, frame_idx=0)
+        exp_track_a.has_emitted = False
+
+        fake_res_a = MagicMock(
+            plate_text="B1234ABC",
+            total_votes=12,
+            status="GRAMMAR_VALID",
+            winner_share=0.25,
+            best_reading={"mean_box_conf_all": 0.95, "char_box_confs": [0.95] * 8},
+        )
+        fake_engine_a = MagicMock()
+        fake_engine_a.compute_consensus.return_value = fake_res_a
+        plugin_a._voting_engines[10] = fake_engine_a
+        plugin_a.tracker.update = MagicMock(return_value=([], [exp_track_a]))
+
+        frame = np.ones((720, 1280, 3), dtype=np.uint8) * 128
+        ctx_a = SharedAnalyticsContext(frame=frame, frame_index=0, camera_id="cam_test", pipeline_id="pipe_test")
+        evts_a = plugin_a.process(ctx_a)
+
+        self.assertEqual(len(evts_a), 0)
+        self.assertNotIn("B1234ABC", plugin_a._cooldown_map)
+        self.assertNotIn(10, plugin_a._voting_engines)
+
+        # b) same but winner_share 0.6 -> one event with finalized_on_expiry=True
+        plugin_b = VehicleLPRPlugin()
+        plugin_b.state = PluginState.RUNNING
+        plugin_b.config.emit_on_track_expiry = True
+        plugin_b.config.min_observations = 3
+        plugin_b.config.min_winner_share = 0.50
+        plugin_b.config.cooldown_s = 60.0
+
+        exp_track_b = PlateTrack(track_id=20, bbox=(100.0, 100.0, 300.0, 180.0), conf=0.95, frame_idx=0)
+        exp_track_b.has_emitted = False
+
+        fake_res_b = MagicMock(
+            plate_text="B5678XYZ",
+            total_votes=12,
+            status="GRAMMAR_VALID",
+            winner_share=0.6,
+            best_reading={"mean_box_conf_all": 0.95, "char_box_confs": [0.95] * 8},
+        )
+        fake_engine_b = MagicMock()
+        fake_engine_b.compute_consensus.return_value = fake_res_b
+        plugin_b._voting_engines[20] = fake_engine_b
+        plugin_b.tracker.update = MagicMock(return_value=([], [exp_track_b]))
+
+        ctx_b = SharedAnalyticsContext(frame=frame, frame_index=0, camera_id="cam_test", pipeline_id="pipe_test")
+        evts_b = plugin_b.process(ctx_b)
+
+        self.assertEqual(len(evts_b), 1)
+        self.assertTrue(evts_b[0].attributes["finalized_on_expiry"])
+        self.assertIn("B5678XYZ", plugin_b._cooldown_map)
+        self.assertNotIn(20, plugin_b._voting_engines)

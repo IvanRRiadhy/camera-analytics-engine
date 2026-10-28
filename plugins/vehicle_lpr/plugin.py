@@ -315,6 +315,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                         if (
                             v_res.plate_text
                             and v_res.total_votes >= self.config.min_observations
+                            and v_res.winner_share > self.config.min_winner_share
                             and (v_res.status == "GRAMMAR_VALID" or (self.config.allow_review and v_res.status == "REVIEW"))
                         ):
                             plate_str = str(v_res.plate_text).strip().upper()
