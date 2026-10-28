@@ -101,6 +101,8 @@ class PipelineHealthState:
     frame_count: int
     status: str
     engine_version: str = "1.5.0"
+    reader_state: str = "UNKNOWN"
+    pipeline_state: str = "UNKNOWN"
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +190,8 @@ class CameraAnalyticsSnapshot:
                 "trackerTimeMs": round(self.health.tracker_time_ms, 2),
                 "frameCount": self.health.frame_count,
                 "status": self.health.status,
+                "readerState": self.health.reader_state,
+                "pipelineState": self.health.pipeline_state,
                 "engineVersion": self.health.engine_version,
             },
             "plugins": plugins_dict,

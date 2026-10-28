@@ -52,6 +52,7 @@ class ReaderWorker:
         self._event_bus_ref: Optional[Any] = None
 
         self._state = ReaderState.CREATED
+        self._last_frame_time: float = 0.0
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -69,6 +70,11 @@ class ReaderWorker:
     def state(self) -> ReaderState:
         with self._lock:
             return self._state
+
+    @property
+    def last_frame_time(self) -> float:
+        with self._lock:
+            return self._last_frame_time
 
     @property
     def buffer(self) -> FrameBuffer:
@@ -130,6 +136,8 @@ class ReaderWorker:
     def _set_state(self, new_state: ReaderState) -> None:
         with self._lock:
             self._state = new_state
+            if new_state == ReaderState.RECONNECTING:
+                self._last_frame_time = 0.0
 
     def _run_loop(self) -> None:
         """Main execution loop running in background thread."""
@@ -163,6 +171,7 @@ class ReaderWorker:
 
             # Update Metrics & Cache Frame in FrameBuffer
             with self._lock:
+                self._last_frame_time = time.time()
                 self._metrics.total_frames_read += 1
                 self._metrics.last_frame_timestamp = frame.timestamp
                 self._metrics.avg_read_latency_ms = frame.read_latency_ms

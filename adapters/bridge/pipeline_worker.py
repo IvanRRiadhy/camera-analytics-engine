@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from camera_analytics.adapters.bridge.inference_pipeline import FrameProcessingSummary, InferencePipeline
 from camera_analytics.ingestion.models import IngestedFrame
@@ -35,6 +35,7 @@ class PipelineExecutionWorker:
         camera: Optional[Camera] = None,
         metrics_accumulator: Optional[Any] = None,
         aggregator: Optional[Any] = None,
+        reader_worker: Optional[Any] = None,
     ) -> None:
         self._pipeline_id = pipeline_id
         self._camera_id = camera_id
@@ -43,6 +44,7 @@ class PipelineExecutionWorker:
         self._camera = camera or getattr(inference_pipeline, "_camera", None)
         self._metrics_accumulator = metrics_accumulator
         self._aggregator = aggregator
+        self._reader_worker = reader_worker
 
         self._state = PipelineState.CREATED
         self._stop_event = threading.Event()
@@ -69,6 +71,10 @@ class PipelineExecutionWorker:
     @property
     def aggregator(self) -> Optional[Any]:
         return self._aggregator
+
+    @property
+    def reader_worker(self) -> Optional[Any]:
+        return self._reader_worker
 
     @property
     def state(self) -> PipelineState:

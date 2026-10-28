@@ -119,6 +119,8 @@ class SnapshotPublisher:
             and last.loitering == new_snapshot.loitering
             and last.zone_occupancy == new_snapshot.zone_occupancy
             and last.health.status == new_snapshot.health.status
+            and last.health.reader_state == new_snapshot.health.reader_state
+            and last.health.pipeline_state == new_snapshot.health.pipeline_state
         )
         if is_same:
             RuntimeLogger.forensic(
@@ -180,12 +182,14 @@ class SnapshotPublisher:
             snapshot = aggregator.create_snapshot(worker=worker, context=ctx)
 
             logger.info(
-                "[FORENSIC SNAPSHOT BUILT] MsgId: %s | Cam: %s | Health FPS: %.1f | FrameCount: %d | Status: %s | People: %s | Queue: %s",
+                "[FORENSIC SNAPSHOT BUILT] MsgId: %s | Cam: %s | Health FPS: %.1f | FrameCount: %d | Status: %s | ReaderState: %s | PipelineState: %s | People: %s | Queue: %s",
                 snapshot.message_id,
                 snapshot.camera_id,
                 snapshot.health.fps,
                 snapshot.health.frame_count,
                 snapshot.health.status,
+                snapshot.health.reader_state,
+                snapshot.health.pipeline_state,
                 snapshot.people_counting,
                 snapshot.queue_detection,
             )

@@ -297,6 +297,7 @@ def main(max_run_sec: Optional[float] = None) -> int:
             inference_pipeline=inf_pipeline,
             metrics_accumulator=acc,
             aggregator=pipe_inst.aggregator,
+            reader_worker=r_worker,
         )
 
         reader_workers.append(r_worker)
