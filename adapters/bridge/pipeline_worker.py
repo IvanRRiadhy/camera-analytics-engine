@@ -23,6 +23,12 @@ from camera_analytics.viewer.builder import FramePresentationBuilder
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_MIN_FAILURES: int = 3
+DEFAULT_FAIL_AFTER_S: float = 10.0
+DEFAULT_WARN_INTERVAL_S: float = 5.0
+DEFAULT_MAX_CONSECUTIVE_FAILURES: int = 5
+
+
 class PipelineExecutionWorker:
     """Dedicated background thread worker dequeuing frames from FrameQueue and triggering InferencePipeline."""
 
@@ -36,6 +42,10 @@ class PipelineExecutionWorker:
         metrics_accumulator: Optional[Any] = None,
         aggregator: Optional[Any] = None,
         reader_worker: Optional[Any] = None,
+        min_failures: int = DEFAULT_MIN_FAILURES,
+        fail_after_s: float = DEFAULT_FAIL_AFTER_S,
+        clock: Optional[Callable[[], float]] = None,
+        max_consecutive_failures: Optional[int] = None,
     ) -> None:
         self._pipeline_id = pipeline_id
         self._camera_id = camera_id
@@ -45,6 +55,15 @@ class PipelineExecutionWorker:
         self._metrics_accumulator = metrics_accumulator
         self._aggregator = aggregator
         self._reader_worker = reader_worker
+        if max_consecutive_failures is not None and min_failures == DEFAULT_MIN_FAILURES:
+            self._min_failures = max(1, int(max_consecutive_failures))
+        else:
+            self._min_failures = max(1, int(min_failures))
+        self._fail_after_s = float(fail_after_s)
+        self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
+        self._consecutive_failures = 0
+        self._first_failure_time: Optional[float] = None
+        self._last_warn_time: float = -1e9
 
         self._state = PipelineState.CREATED
         self._stop_event = threading.Event()
@@ -100,6 +119,28 @@ class PipelineExecutionWorker:
         with self._lock:
             return self._last_summary
 
+    @property
+    def min_failures(self) -> int:
+        return self._min_failures
+
+    @property
+    def fail_after_s(self) -> float:
+        return self._fail_after_s
+
+    @property
+    def max_consecutive_failures(self) -> int:
+        return self._min_failures
+
+    @property
+    def consecutive_failures(self) -> int:
+        with self._lock:
+            return self._consecutive_failures
+
+    @property
+    def first_failure_time(self) -> Optional[float]:
+        with self._lock:
+            return self._first_failure_time
+
     def start(self) -> bool:
         """Start the background execution worker thread."""
         with self._lock:
@@ -126,7 +167,8 @@ class PipelineExecutionWorker:
             self._thread.join(timeout=2.0)
 
         with self._lock:
-            self._state = PipelineState.STOPPED
+            if self._state != PipelineState.FAILED:
+                self._state = PipelineState.STOPPED
             self._inference_pipeline.stop()
 
         logger.info("PipelineExecutionWorker[%s]: Stopped cleanly.", self._pipeline_id)
@@ -168,6 +210,8 @@ class PipelineExecutionWorker:
                 with self._lock:
                     self._total_processed_frames += 1
                     self._last_summary = summary
+                    self._consecutive_failures = 0
+                    self._first_failure_time = None
 
                 # Build FramePresentation view model from AI outputs
                 if self._camera is not None:
@@ -206,8 +250,45 @@ class PipelineExecutionWorker:
                     last_fps_calc_time = now
 
             except Exception as exc:
-                logger.error("PipelineExecutionWorker[%s]: Exception in InferencePipeline: %s", self._pipeline_id, exc, exc_info=True)
+                now = self._clock()
+                is_failed = False
+                should_warn = False
                 with self._lock:
-                    self._state = PipelineState.FAILED
+                    self._consecutive_failures += 1
+                    failures = self._consecutive_failures
+                    if self._first_failure_time is None:
+                        self._first_failure_time = now
+                    duration = now - self._first_failure_time
 
-        self._set_state(PipelineState.STOPPED)
+                    if failures >= self._min_failures and duration >= self._fail_after_s:
+                        self._state = PipelineState.FAILED
+                        is_failed = True
+                    else:
+                        if (now - self._last_warn_time) >= DEFAULT_WARN_INTERVAL_S:
+                            self._last_warn_time = now
+                            should_warn = True
+
+                if is_failed:
+                    logger.error(
+                        "PipelineExecutionWorker[%s]: Camera '%s' reached failure threshold (%d failures over %.1fs, last error: %s). Pipeline FAILED.",
+                        self._pipeline_id,
+                        self._camera_id,
+                        failures,
+                        duration,
+                        exc,
+                        exc_info=True,
+                    )
+                    break
+                elif should_warn:
+                    logger.warning(
+                        "PipelineExecutionWorker[%s]: Camera '%s' pipeline exception (%d failures, streak %.1fs): %s",
+                        self._pipeline_id,
+                        self._camera_id,
+                        failures,
+                        duration,
+                        exc,
+                    )
+
+        with self._lock:
+            if self._state != PipelineState.FAILED:
+                self._state = PipelineState.STOPPED

@@ -14,10 +14,11 @@ Features:
 
 from __future__ import annotations
 
+import gc
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
 
@@ -80,9 +81,11 @@ class YOLOPoseAdapter(DetectorPort):
         self,
         confidence_threshold: float = 0.5,
         iou_threshold: float = 0.45,
+        sleep_fn: Optional[Callable[[float], None]] = None,
     ) -> None:
         self._confidence_threshold = confidence_threshold
         self._iou_threshold = iou_threshold
+        self._sleep_fn = sleep_fn if sleep_fn is not None else time.sleep
         self._model: Any = None
         self._device: str = "cpu"
         self._model_path: str = ""
@@ -103,7 +106,12 @@ class YOLOPoseAdapter(DetectorPort):
         """Active compute device used by the model."""
         return self._device
 
-    def load(self, model_path: str, device: str = "cuda") -> None:
+    def load(
+        self,
+        model_path: str,
+        device: str = "cuda",
+        sleep_fn: Optional[Callable[[float], None]] = None,
+    ) -> None:
         """Load the YOLO-Pose model.
 
         Performs lazy import of `ultralytics` and `torch`, validates model path,
@@ -112,6 +120,7 @@ class YOLOPoseAdapter(DetectorPort):
         Args:
             model_path: Path to model weights file (.pt) or official model name.
             device: Requested compute device ('cuda', 'cpu', 'mps').
+            sleep_fn: Optional injectable sleep function for retries.
 
         Raises:
             RuntimeError: If `ultralytics` package is not installed or model loading fails.
@@ -155,6 +164,36 @@ class YOLOPoseAdapter(DetectorPort):
         try:
             logger.info("Loading YOLO-Pose model from '%s' on device '%s'...", model_path, self._device)
             self._model = YOLO(model_path)
+            # Explicit warm-up with CUDA OOM retry policy
+            effective_sleep = sleep_fn if sleep_fn is not None else self._sleep_fn
+            dummy_frame = np.zeros((640, 640, 3), dtype=np.uint8)
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    self._model(
+                        dummy_frame,
+                        conf=self._confidence_threshold,
+                        iou=self._iou_threshold,
+                        device=self._device,
+                        verbose=False,
+                    )
+                    break
+                except Exception as w_exc:
+                    is_oom = isinstance(w_exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(w_exc).lower()
+                    if is_oom and attempt < max_attempts:
+                        logger.warning(
+                            "YOLOPoseAdapter: CUDA OOM on warm-up attempt %d/%d (%s). Retrying in 2.0s...",
+                            attempt,
+                            max_attempts,
+                            w_exc,
+                        )
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        effective_sleep(2.0)
+                    else:
+                        raise
+
             self._loaded = True
             logger.info("YOLOPoseAdapter successfully loaded on device '%s'", self._device)
         except Exception as exc:

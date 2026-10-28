@@ -33,6 +33,7 @@ from camera_analytics.ingestion import (
 from camera_analytics.orchestration import (
     PipelineCoordinator,
     PipelineInstance,
+    PipelineState,
 )
 from camera_analytics.viewer import (
     FramePresentationBuilder,
@@ -364,10 +365,16 @@ def main(max_run_sec: Optional[float] = None) -> int:
 
     # 5. Main Execution Loop & Viewer Rendering
     start_run_time = time.time()
+    all_workers_failed = False
     try:
         while not stop_signal_received:
             if max_run_sec is not None and (time.time() - start_run_time) >= max_run_sec:
                 logger.info("[+] Target run duration (%.1fs) reached. Stopping loop.", max_run_sec)
+                break
+
+            if execution_workers and all(ew.state == PipelineState.FAILED for ew in execution_workers):
+                logger.error("[-] All %d execution worker(s) reached FAILED state. Exiting.", len(execution_workers))
+                all_workers_failed = True
                 break
             if viewer_provider is not None:
                 # Render live view for each camera pipeline via FramePresentationBuilder
@@ -443,7 +450,7 @@ def main(max_run_sec: Optional[float] = None) -> int:
     logger.info("=" * 80)
     logger.info("Enterprise CCTV Analytics Engine shutdown complete. Goodbye!")
     logger.info("=" * 80)
-    return 0
+    return 1 if all_workers_failed else 0
 
 
 if __name__ == "__main__":
