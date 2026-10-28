@@ -61,6 +61,7 @@ class RenderOptions:
     draw_metrics: bool = False
     draw_events: bool = True
     draw_debug_panel: bool = False
+    draw_plates: bool = True
     human_options: HumanDebugOptions = field(default_factory=HumanDebugOptions)
 
 
@@ -216,6 +217,90 @@ class OverlayRenderer:
                     for idx, line in enumerate(lines):
                         ty = py1 + 14 + (idx * line_h)
                         cv2.putText(canvas, line, (px1 + 6, ty), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+
+        # 5b. Render Vehicle License Plate Overlays
+        if getattr(self.options, "draw_plates", True) and hasattr(presentation, "plate_boxes") and presentation.plate_boxes:
+            for p_box in presentation.plate_boxes:
+                # 1. Bounding Box Rectangle (High-visibility Gold/Amber (0, 215, 255) in BGR)
+                plate_color = getattr(p_box, "color_rgb", (0, 215, 255))
+                cv2.rectangle(
+                    canvas,
+                    (p_box.x1, p_box.y1),
+                    (p_box.x2, p_box.y2),
+                    color=plate_color,
+                    thickness=2,
+                )
+
+                # 2. Corner Accents on the Plate Box for high visibility
+                bw = p_box.x2 - p_box.x1
+                bh = p_box.y2 - p_box.y1
+                c_len = min(12, max(4, int(min(bw, bh) * 0.25)))
+                c_thick = 3
+                # Top-Left
+                cv2.line(canvas, (p_box.x1, p_box.y1), (p_box.x1 + c_len, p_box.y1), plate_color, c_thick)
+                cv2.line(canvas, (p_box.x1, p_box.y1), (p_box.x1, p_box.y1 + c_len), plate_color, c_thick)
+                # Top-Right
+                cv2.line(canvas, (p_box.x2, p_box.y1), (p_box.x2 - c_len, p_box.y1), plate_color, c_thick)
+                cv2.line(canvas, (p_box.x2, p_box.y1), (p_box.x2, p_box.y1 + c_len), plate_color, c_thick)
+                # Bottom-Left
+                cv2.line(canvas, (p_box.x1, p_box.y2), (p_box.x1 + c_len, p_box.y2), plate_color, c_thick)
+                cv2.line(canvas, (p_box.x1, p_box.y2), (p_box.x1, p_box.y2 - c_len), plate_color, c_thick)
+                # Bottom-Right
+                cv2.line(canvas, (p_box.x2, p_box.y2), (p_box.x2 - c_len, p_box.y2), plate_color, c_thick)
+                cv2.line(canvas, (p_box.x2, p_box.y2), (p_box.x2, p_box.y2 - c_len), plate_color, c_thick)
+
+                # 3. Label Text: Plate text (latest high confidence) and confidence
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.50
+                thick = 1
+
+                t_id_str = f"Plate #{p_box.track_id}" if p_box.track_id > 0 else "Plate"
+                if p_box.plate_text:
+                    if 0.0 < p_box.confidence <= 1.0:
+                        conf_str = f"{p_box.confidence * 100:.0f}%"
+                    elif p_box.confidence > 1.0:
+                        conf_str = f"{p_box.confidence:.1f}%"
+                    else:
+                        conf_str = ""
+                    conf_display = f" ({conf_str})" if conf_str else ""
+                    tag = " [OK]" if p_box.is_consensus else ""
+                    plate_display_line = f"[{t_id_str}] {p_box.plate_text}{conf_display}{tag}"
+                else:
+                    det_conf = f" ({p_box.detector_confidence:.2f})" if p_box.detector_confidence > 0 else ""
+                    plate_display_line = f"[{t_id_str}]{det_conf}"
+
+                # Calculate pill dimensions
+                (tw, th), baseline = cv2.getTextSize(plate_display_line, font, scale, thick)
+                pill_w = tw + 12
+                pill_h = th + 10
+
+                # Position pill above box, or below if near top of image
+                if p_box.y1 > pill_h + 6:
+                    py1 = p_box.y1 - pill_h - 4
+                    py2 = py1 + pill_h
+                else:
+                    py1 = min(canvas.shape[0] - pill_h, p_box.y2 + 4)
+                    py2 = py1 + pill_h
+
+                px1 = max(0, p_box.x1)
+                px2 = min(canvas.shape[1], px1 + pill_w)
+
+                # Draw dark semi-transparent pill background
+                sub_roi = canvas[py1:py2, px1:px2]
+                if sub_roi.shape[0] > 0 and sub_roi.shape[1] > 0:
+                    dark_bg = np.zeros_like(sub_roi)
+                    cv2.addWeighted(sub_roi, 0.25, dark_bg, 0.75, 0, sub_roi)
+                    cv2.rectangle(canvas, (px1, py1), (px2, py2), color=plate_color, thickness=1)
+                    cv2.putText(
+                        canvas,
+                        plate_display_line,
+                        (px1 + 6, py2 - 6),
+                        font,
+                        scale,
+                        (255, 255, 255),
+                        thick,
+                        cv2.LINE_AA,
+                    )
 
         # 6. Render HUD Runtime Metrics with Semi-Transparent Background Box
         if self.options.draw_metrics and presentation.metrics:

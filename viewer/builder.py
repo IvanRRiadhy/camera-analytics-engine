@@ -19,6 +19,7 @@ from camera_analytics.viewer.models import (
     PresentedBox,
     PresentedEvent,
     PresentedMetrics,
+    PresentedPlateBox,
     PresentedPoint,
     PresentedSkeleton,
     PresentedTrack,
@@ -207,6 +208,36 @@ class FramePresentationBuilder:
             for h_state in frame_context.human_states.values():
                 human_vms.append(presenter.present(h_state))
 
+        # Extract License Plate View Models if present in frame context
+        plate_boxes: list[PresentedPlateBox] = []
+        lpr_plates = []
+        if frame_context is not None:
+            if hasattr(frame_context, "metadata") and isinstance(frame_context.metadata, dict):
+                lpr_plates = frame_context.metadata.get("lpr_plates", [])
+            if not lpr_plates and hasattr(frame_context, "lpr_plates"):
+                lpr_plates = getattr(frame_context, "lpr_plates", [])
+
+        if lpr_plates:
+            for p in lpr_plates:
+                if isinstance(p, dict):
+                    bx = p.get("bbox", [0, 0, 0, 0])
+                    plate_boxes.append(
+                        PresentedPlateBox(
+                            track_id=int(p.get("track_id", 0)),
+                            x1=int(bx[0]),
+                            y1=int(bx[1]),
+                            x2=int(bx[2]),
+                            y2=int(bx[3]),
+                            plate_text=str(p.get("plate_text", "")),
+                            confidence=float(p.get("confidence", 0.0)),
+                            detector_confidence=float(p.get("detector_confidence", 0.0)),
+                            is_consensus=bool(p.get("is_consensus", False)),
+                            label=str(p.get("label", "")),
+                        )
+                    )
+                elif isinstance(p, PresentedPlateBox):
+                    plate_boxes.append(p)
+
         return FramePresentation(
             camera_id=camera.camera_id,
             camera_name=camera.name,
@@ -221,4 +252,5 @@ class FramePresentationBuilder:
             metrics=pres_metrics,
             spatial_snapshot=sp_snap,
             human_view_models=tuple(human_vms),
+            plate_boxes=tuple(plate_boxes),
         )

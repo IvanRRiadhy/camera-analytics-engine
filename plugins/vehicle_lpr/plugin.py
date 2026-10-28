@@ -519,6 +519,46 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                         plate_str, plate_conf, voting_res.winner_share, tid
                     )
 
+            # 4b. Export active plate tracks for viewer overlay
+            active_plates_overlay: List[Dict[str, Any]] = []
+            for tid, pl_track in self.tracker.tracks.items():
+                p_text = ""
+                p_conf = 0.0
+                is_c = False
+
+                if tid in self._voting_engines:
+                    v_eng = self._voting_engines[tid]
+                    v_res = v_eng.compute_consensus()
+                    if v_res.plate_text:
+                        p_text = str(v_res.plate_text).strip().upper()
+                        best_rd = v_res.best_reading or {}
+                        p_conf = float(best_rd.get("mean_box_conf_all", 0.0))
+                        is_c = bool(
+                            (v_res.status == "GRAMMAR_VALID" or (self.config.allow_review and v_res.status == "REVIEW"))
+                            and v_res.total_votes >= self.config.min_observations
+                            and v_res.winner_share > self.config.min_winner_share
+                        )
+                    elif getattr(v_eng, "observations", None):
+                        best_obs = max(v_eng.observations, key=lambda o: getattr(o.get("reader_output"), "mean_box_conf_all", 0.0))
+                        r_out = best_obs.get("reader_output")
+                        if r_out:
+                            p_text = str(getattr(r_out, "raw_text", "")).strip().upper()
+                            p_conf = float(getattr(r_out, "mean_box_conf_all", 0.0))
+
+                active_plates_overlay.append({
+                    "track_id": tid,
+                    "bbox": [float(c) for c in pl_track.bbox],
+                    "detector_confidence": float(pl_track.conf),
+                    "plate_text": p_text,
+                    "confidence": p_conf,
+                    "is_consensus": is_c,
+                    "has_emitted": pl_track.has_emitted,
+                })
+
+            if hasattr(context, "metadata") and isinstance(context.metadata, dict):
+                context.metadata["lpr_plates"] = active_plates_overlay
+            setattr(context, "lpr_plates", active_plates_overlay)
+
             # 5. Periodic rate-limited status log
             if now_ts - self._last_stats_log_time >= 10.0:
                 self._last_stats_log_time = now_ts

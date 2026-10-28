@@ -37,6 +37,23 @@ class PresentedBox:
 
 
 @dataclass(frozen=True, slots=True)
+class PresentedPlateBox:
+    """Bounding box and text presentation model for vehicle license plates."""
+
+    track_id: int
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    plate_text: str = ""
+    confidence: float = 0.0
+    detector_confidence: float = 0.0
+    is_consensus: bool = False
+    color_rgb: tuple[int, int, int] = (0, 215, 255)
+    label: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class PresentedSkeleton:
     """17-Point COCO pose skeleton presentation model."""
 
@@ -115,3 +132,4 @@ class FramePresentation:
     metrics: Optional[PresentedMetrics] = None
     spatial_snapshot: Any = None
     human_view_models: tuple[Any, ...] = ()
+    plate_boxes: tuple[PresentedPlateBox, ...] = ()
