@@ -28,3 +28,5 @@ wheels/
 models/human/mivolo/weights/.cache/
 storage/recordings/
 logs/
+storage/metadata.db
+third_party/MiVOLO/
