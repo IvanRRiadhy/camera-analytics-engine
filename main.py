@@ -246,7 +246,20 @@ def main(max_run_sec: Optional[float] = None) -> int:
 
     for pipe_inst in pipelines:
         camera = pipe_inst.camera
-        video_source = create_video_source(camera.source)
+
+        analytics_cfg = getattr(getattr(pipe_inst.config, "app", None), "analytics", None)
+        enabled_mods = (
+            list(analytics_cfg.enabled_modules)
+            if (analytics_cfg is not None and analytics_cfg.enabled_modules is not None)
+            else None
+        )
+        if enabled_mods is not None and len(enabled_mods) == 0:
+            logger.error("Skipping pipeline for camera '%s': resolved enabled_modules is empty.", camera.camera_id)
+            continue
+
+        src_cfg = getattr(getattr(pipe_inst.config, "app", None), "source", None)
+        src_params = dict(src_cfg.params) if (src_cfg is not None and getattr(src_cfg, "params", None)) else None
+        video_source = create_video_source(camera.source, params=src_params)
         video_reader = VideoReader(source=video_source)
 
         # Create isolated PipelineMetricsAccumulator per pipeline
@@ -265,8 +278,6 @@ def main(max_run_sec: Optional[float] = None) -> int:
             metrics_accumulator=acc,
         )
 
-        analytics_cfg = getattr(getattr(pipe_inst.config, "app", None), "analytics", None)
-        enabled_mods = list(analytics_cfg.enabled_modules) if analytics_cfg and analytics_cfg.enabled_modules else None
         mod_settings = dict(analytics_cfg.module_settings) if analytics_cfg and analytics_cfg.module_settings else {}
 
         inf_pipeline = InferencePipeline(
@@ -290,6 +301,10 @@ def main(max_run_sec: Optional[float] = None) -> int:
 
         reader_workers.append(r_worker)
         execution_workers.append(e_worker)
+
+    if len(execution_workers) == 0:
+        logger.error("[-] No valid camera pipelines remain after module validation! Exiting.")
+        return 1
 
     from camera_analytics.runtime.analytics import SnapshotPublisher
     comm_mgr = context.services.get("communication_manager")

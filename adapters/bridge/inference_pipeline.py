@@ -68,7 +68,11 @@ class InferencePipeline:
         self._detector = detector or self._create_default_detector()
         self._tracker = tracker or self._create_default_tracker()
         self._comm_manager = comm_manager or CommunicationManager.get_instance()
-        self._enabled_modules = enabled_modules or ["people_counting", "queue_detection", "loitering_detection"]
+        self._enabled_modules = (
+            list(enabled_modules)
+            if enabled_modules is not None
+            else ["people_counting", "queue_detection", "loitering_detection"]
+        )
         self._module_settings = module_settings or {}
 
         # Instantiate per-pipeline HumanRuntime facade

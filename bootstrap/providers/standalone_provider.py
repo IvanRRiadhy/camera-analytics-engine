@@ -7,6 +7,7 @@ configuration files (e.g. `configs/standalone.json`) without requiring any conne
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -128,6 +129,12 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
 
         for cam_data in cameras_list:
             cam_id = cam_data.get("camera_id", "cam_default")
+            if not bool(cam_data.get("enabled", True)):
+                logger.info(
+                    "StandaloneConfigurationProvider: Skipping disabled camera '%s' (enabled=false).",
+                    cam_id,
+                )
+                continue
             cam_name = cam_data.get("name", f"Camera {cam_id}")
 
             src_val = cam_data.get("source")
@@ -177,9 +184,113 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
             )
             cameras_map[cam_id] = camera_obj
 
-            cam_module_settings = dict(global_module_settings)
-            if isinstance(cam_data.get("module_settings"), dict):
-                cam_module_settings.update(cam_data["module_settings"])
+            cam_module_settings: Dict[str, Any] = {
+                k: (dict(v) if isinstance(v, dict) else v)
+                for k, v in global_module_settings.items()
+            }
+            analytics_dict = cam_data.get("analytics") if isinstance(cam_data.get("analytics"), dict) else {}
+
+            has_top_ms = "module_settings" in cam_data and isinstance(cam_data.get("module_settings"), dict)
+            has_ana_ms = "module_settings" in analytics_dict and isinstance(analytics_dict.get("module_settings"), dict)
+            if has_top_ms and has_ana_ms and cam_data["module_settings"] != analytics_dict["module_settings"]:
+                logger.warning(
+                    "StandaloneConfigurationProvider: Camera '%s' defines conflicting 'module_settings' at camera top-level and 'analytics.module_settings'. Precedence: camera top-level > analytics.module_settings.",
+                    cam_id,
+                )
+            if has_ana_ms:
+                for k, v in analytics_dict["module_settings"].items():
+                    if isinstance(v, dict) and isinstance(cam_module_settings.get(k), dict):
+                        cam_module_settings[k] = {**cam_module_settings[k], **v}
+                    else:
+                        cam_module_settings[k] = dict(v) if isinstance(v, dict) else v
+            if has_top_ms:
+                for k, v in cam_data["module_settings"].items():
+                    if isinstance(v, dict) and isinstance(cam_module_settings.get(k), dict):
+                        cam_module_settings[k] = {**cam_module_settings[k], **v}
+                    else:
+                        cam_module_settings[k] = dict(v) if isinstance(v, dict) else v
+
+            has_top_mods = "enabled_modules" in cam_data and isinstance(cam_data.get("enabled_modules"), list)
+            has_ana_mods = "enabled_modules" in analytics_dict and isinstance(analytics_dict.get("enabled_modules"), list)
+            if has_top_mods and has_ana_mods and cam_data["enabled_modules"] != analytics_dict["enabled_modules"]:
+                logger.warning(
+                    "StandaloneConfigurationProvider: Camera '%s' defines conflicting 'enabled_modules' at camera top-level (%s) and 'analytics.enabled_modules' (%s). Precedence: camera top-level > analytics.enabled_modules.",
+                    cam_id,
+                    cam_data["enabled_modules"],
+                    analytics_dict["enabled_modules"],
+                )
+
+            if has_top_mods:
+                raw_enabled_modules = list(cam_data["enabled_modules"])
+                explicit_modules_key = True
+            elif has_ana_mods:
+                raw_enabled_modules = list(analytics_dict["enabled_modules"])
+                explicit_modules_key = True
+            else:
+                raw_enabled_modules = ["people_counting", "queue_detection", "loitering_detection"]
+                explicit_modules_key = False
+
+            valid_enabled_modules: List[str] = []
+            for mod_code in raw_enabled_modules:
+                if not isinstance(mod_code, str) or not mod_code.strip():
+                    logger.warning(
+                        "StandaloneConfigurationProvider: Camera '%s' skipping invalid module code '%s'.",
+                        cam_id,
+                        mod_code,
+                    )
+                    continue
+
+                module_target = f"camera_analytics.plugins.{mod_code}.plugin"
+                is_valid = False
+                find_err: Optional[str] = None
+                try:
+                    spec = importlib.util.find_spec(module_target)
+                    is_valid = spec is not None
+                except (ModuleNotFoundError, ImportError, ValueError) as exc:
+                    is_valid = False
+                    find_err = f" ({type(exc).__name__}: {exc})"
+
+                if not is_valid:
+                    logger.warning(
+                        "StandaloneConfigurationProvider: Camera '%s' skipping unknown module code '%s'%s.",
+                        cam_id,
+                        mod_code,
+                        find_err or "",
+                    )
+                    continue
+                valid_enabled_modules.append(mod_code)
+
+            if len(valid_enabled_modules) == 0:
+                logger.error(
+                    "StandaloneConfigurationProvider: Camera '%s' has no valid enabled_modules (%s). Skipping pipeline creation.",
+                    cam_id,
+                    raw_enabled_modules,
+                )
+                continue
+
+            resolved_enabled_modules = tuple(valid_enabled_modules)
+
+            open_timeout_sec = float(
+                cam_data.get(
+                    "open_timeout_sec",
+                    cam_data.get(
+                        "rtsp_open_timeout_sec",
+                        cam_data.get("connect_timeout_sec", 5.0),
+                    ),
+                )
+            )
+            read_timeout_sec = float(
+                cam_data.get(
+                    "read_timeout_sec",
+                    cam_data.get("rtsp_read_timeout_sec", 5.0),
+                )
+            )
+            source_params: Dict[str, Any] = {
+                "open_timeout_sec": open_timeout_sec,
+                "read_timeout_sec": read_timeout_sec,
+            }
+            if "tcp_precheck_timeout_sec" in cam_data:
+                source_params["tcp_precheck_timeout_sec"] = float(cam_data["tcp_precheck_timeout_sec"])
 
             # Construct Pipeline Configuration for this Camera
             app_cfg = AppConfig(
@@ -190,11 +301,11 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                     zones=tuple(zones_dict.values()),
                     raw_zones_payload=tuple(cam_data.get("zones", [])),
                 ),
-                source=SourceConfig(source_type="rtsp", uri=rtsp_url),
+                source=SourceConfig(source_type="rtsp", uri=rtsp_url, params=source_params),
                 detector=DetectorConfig(device=device),
                 tracker=TrackerConfig(),
                 analytics=AnalyticsConfig(
-                    enabled_modules=tuple(cam_data.get("enabled_modules", ["people_counting", "queue_detection", "loitering_detection"])),
+                    enabled_modules=resolved_enabled_modules,
                     module_settings=cam_module_settings,
                 ),
                 runner=RunnerConfig(),
