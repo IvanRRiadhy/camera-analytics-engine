@@ -72,9 +72,26 @@ class ZoneManager:
         logger.info("[Spatial Engine] Loading %d Zones for Camera '%s'...", len(raw_zones_payload), camera_id)
         logger.info("--------------------------------------------------------------------------------")
 
+        seen_zone_ids: set[str] = set()
+
         for z_data in raw_zones_payload:
-            z_id = str(z_data.get("id") or z_data.get("zoneId") or f"z_{len(loaded_zones)}")
+            z_id = str(
+                z_data.get("zone_id")
+                or z_data.get("id")
+                or z_data.get("zoneId")
+                or f"z_{len(loaded_zones)}"
+            )
             z_name = str(z_data.get("name", f"Zone {z_id}"))
+
+            if z_id in seen_zone_ids:
+                logger.warning(
+                    "[Spatial Engine] Duplicate zone_id '%s' detected for camera '%s'. Skipping duplicate zone '%s'.",
+                    z_id,
+                    camera_id,
+                    z_name,
+                )
+                continue
+            seen_zone_ids.add(z_id)
 
             # Robust polygon extraction from top-level keys or nested cameraConfigs
             raw_poly = (
