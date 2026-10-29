@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -167,6 +168,44 @@ def main(max_run_sec: Optional[float] = None) -> int:
     setup_logging(args.log_level or "INFO")
 
     if args.verify:
+        require_lpr = os.environ.get("AIENGINE_WITH_LPR") == "1"
+        if not require_lpr and getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).resolve().parent
+            if (exe_dir / "camera_analytics" / "plugins" / "vehicle_lpr").is_dir() or (exe_dir / "_internal" / "camera_analytics" / "plugins" / "vehicle_lpr").is_dir():
+                require_lpr = True
+
+        if require_lpr:
+            try:
+                import camera_analytics.plugins.vehicle_lpr.plugin  # noqa: F401
+                import anpr_v2  # noqa: F401
+                import anpr_v2.reader  # noqa: F401
+                import anpr_v2.voting  # noqa: F401
+                logger.info("[+] Pre-flight verification: vehicle_lpr and anpr_v2 imported successfully.")
+            except Exception as exc:
+                logger.error("[-] Pre-flight verification FAILED for vehicle_lpr / anpr_v2: %s", exc)
+                return 1
+
+        require_fr = os.environ.get("AIENGINE_WITH_FR") == "1"
+        if not require_fr and getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).resolve().parent
+            if (exe_dir / "camera_analytics" / "plugins" / "face_matching").is_dir() or (exe_dir / "_internal" / "camera_analytics" / "plugins" / "face_matching").is_dir():
+                require_fr = True
+
+        if require_fr:
+            try:
+                import camera_analytics.plugins.face_matching.plugin  # noqa: F401
+                from camera_analytics.plugins.face_matching.config import FaceMatchConfig
+                from camera_analytics.plugins.face_matching.detector import YuNetDetector
+                from camera_analytics.plugins.face_matching.embedder import SFaceEmbedder
+
+                fr_cfg = FaceMatchConfig()
+                det = YuNetDetector(model_path=fr_cfg.yunet_weights)
+                emb = SFaceEmbedder(model_path=fr_cfg.sface_weights)
+                logger.info("[+] Pre-flight verification: face_matching, YuNetDetector, and SFaceEmbedder verified successfully.")
+            except Exception as exc:
+                logger.error("[-] Pre-flight verification FAILED for face_matching: %s", exc)
+                return 1
+
         return 0
 
     if args.self_test:

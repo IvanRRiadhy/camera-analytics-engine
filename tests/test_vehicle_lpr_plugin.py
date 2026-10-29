@@ -726,3 +726,55 @@ class TestVehicleLPRPluginUnit(unittest.TestCase):
         self.assertTrue(evts_b[0].attributes["finalized_on_expiry"])
         self.assertIn("B5678XYZ", plugin_b._cooldown_map)
         self.assertNotIn(20, plugin_b._voting_engines)
+
+    def test_frozen_model_path_resolution(self):
+        """Test model path resolution when running inside frozen executable."""
+        import os
+        import sys
+        from pathlib import Path
+        from camera_analytics.plugins.vehicle_lpr.config import (
+            VehicleLPRConfig,
+            _resolve_default_path,
+        )
+
+        orig_frozen = getattr(sys, "frozen", None)
+        orig_exe = sys.executable
+        orig_det_env = os.environ.pop("ANPR_DETECTOR_WEIGHTS", None)
+        orig_read_env = os.environ.pop("ANPR_READER_WEIGHTS", None)
+
+        try:
+            sys.frozen = True
+            fake_exe = r"C:\opt\AIEngine\AIEngine.exe"
+            sys.executable = fake_exe
+
+            # Test _resolve_default_path directly for detector and reader
+            det_path = _resolve_default_path(
+                "ANPR_DETECTOR_WEIGHTS",
+                os.path.join("runs", "detect", "indonesian_plate_yolo26_v1", "weights", "best.pt"),
+            )
+            read_path = _resolve_default_path(
+                "ANPR_READER_WEIGHTS",
+                os.path.join("runs", "detect", "lprd_yolo26n_320", "weights", "last.pt"),
+            )
+
+            expected_det = str(Path(r"C:\opt\AIEngine\models\lpr\best.pt"))
+            expected_read = str(Path(r"C:\opt\AIEngine\models\lpr\last.pt"))
+
+            self.assertEqual(det_path, expected_det)
+            self.assertEqual(read_path, expected_read)
+
+            # Test VehicleLPRConfig default instantiation in frozen mode
+            cfg = VehicleLPRConfig()
+            self.assertEqual(cfg.detector_weights, expected_det)
+            self.assertEqual(cfg.reader_weights, expected_read)
+        finally:
+            if orig_frozen is None:
+                if hasattr(sys, "frozen"):
+                    delattr(sys, "frozen")
+            else:
+                sys.frozen = orig_frozen
+            sys.executable = orig_exe
+            if orig_det_env is not None:
+                os.environ["ANPR_DETECTOR_WEIGHTS"] = orig_det_env
+            if orig_read_env is not None:
+                os.environ["ANPR_READER_WEIGHTS"] = orig_read_env

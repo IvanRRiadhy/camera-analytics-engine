@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -8,9 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_default_path(env_var: str, default_rel: str) -> str:
-    """Resolves model path from environment variable or relative to ANPR root."""
+    """Resolves model path from environment variable, frozen exe directory, or relative to ANPR root."""
     if os.environ.get(env_var):
         return os.environ[env_var]
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        filename = os.path.basename(default_rel)
+        return str(exe_dir / "models" / "lpr" / filename)
     import anpr_v2
     anpr_root = os.environ.get("ANPR_ROOT", str(Path(anpr_v2.__file__).resolve().parent.parent))
     return os.path.join(anpr_root, default_rel)
