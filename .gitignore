@@ -30,3 +30,9 @@ storage/recordings/
 logs/
 storage/metadata.db
 third_party/MiVOLO/
+
+# Face matching: local biometric data (UU PDP). Never commit.
+data/faces/
+data/faces_eval/
+data/face_survey/
+cache/faces/
