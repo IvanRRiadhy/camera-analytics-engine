@@ -1,0 +1,20 @@
+{
+  "plugin_id": "face_matching",
+  "name": "Face Matching Plugin",
+  "version": "1.0.0",
+  "sdk_version": "1.0.0",
+  "entry_point": "camera_analytics.plugins.face_matching.plugin.FaceMatchingPlugin",
+  "author": "Enterprise Analytics Team",
+  "description": "Performs real-time edge face detection, metric embedding, local gallery matching, and temporal consensus identification",
+  "capabilities": [
+    "FACE_DETECTION",
+    "FACE_MATCHING",
+    "TRACKING"
+  ],
+  "execution_policy": {
+    "execution_mode": "STRIDED",
+    "interval": 3
+  },
+  "priority": 16
+}
+
