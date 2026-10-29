@@ -37,6 +37,22 @@ class PresentedBox:
 
 
 @dataclass(frozen=True, slots=True)
+class PresentedFaceBox:
+    """Bounding box and identification presentation model for face matching."""
+
+    track_id: int
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    label: str = ""
+    person_id: str = ""
+    similarity: float = 0.0
+    state: str = "tracking"  # "identified" | "unknown" | "tracking"
+    color_rgb: tuple[int, int, int] = (0, 255, 0)
+
+
+@dataclass(frozen=True, slots=True)
 class PresentedPlateBox:
     """Bounding box and text presentation model for vehicle license plates."""
 
@@ -133,3 +149,4 @@ class FramePresentation:
     spatial_snapshot: Any = None
     human_view_models: tuple[Any, ...] = ()
     plate_boxes: tuple[PresentedPlateBox, ...] = ()
+    face_boxes: tuple[PresentedFaceBox, ...] = ()

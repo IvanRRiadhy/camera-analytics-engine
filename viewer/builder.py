@@ -19,6 +19,7 @@ from camera_analytics.viewer.models import (
     PresentedBox,
     PresentedEvent,
     PresentedMetrics,
+    PresentedFaceBox,
     PresentedPlateBox,
     PresentedPoint,
     PresentedSkeleton,
@@ -208,6 +209,38 @@ class FramePresentationBuilder:
             for h_state in frame_context.human_states.values():
                 human_vms.append(presenter.present(h_state))
 
+        # Extract Face Match View Models if present in frame context
+        face_boxes: list[PresentedFaceBox] = []
+        face_matches = []
+        if frame_context is not None:
+            if hasattr(frame_context, "metadata") and isinstance(frame_context.metadata, dict):
+                face_matches = frame_context.metadata.get("face_matches", [])
+            if not face_matches and hasattr(frame_context, "face_matches"):
+                face_matches = getattr(frame_context, "face_matches", [])
+
+        if face_matches:
+            for f in face_matches:
+                if isinstance(f, dict):
+                    bx = f.get("bbox", [0, 0, 0, 0])
+                    state = str(f.get("state", "tracking"))
+                    color = (0, 255, 0) if state == "identified" else (128, 128, 128)
+                    face_boxes.append(
+                        PresentedFaceBox(
+                            track_id=int(f.get("track_id", 0)),
+                            x1=int(bx[0]),
+                            y1=int(bx[1]),
+                            x2=int(bx[2]),
+                            y2=int(bx[3]),
+                            label=str(f.get("label", "")),
+                            person_id=str(f.get("person_id", "")),
+                            similarity=float(f.get("similarity", 0.0)),
+                            state=state,
+                            color_rgb=color,
+                        )
+                    )
+                elif isinstance(f, PresentedFaceBox):
+                    face_boxes.append(f)
+
         # Extract License Plate View Models if present in frame context
         plate_boxes: list[PresentedPlateBox] = []
         lpr_plates = []
@@ -253,4 +286,5 @@ class FramePresentationBuilder:
             spatial_snapshot=sp_snap,
             human_view_models=tuple(human_vms),
             plate_boxes=tuple(plate_boxes),
+            face_boxes=tuple(face_boxes),
         )

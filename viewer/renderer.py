@@ -62,6 +62,8 @@ class RenderOptions:
     draw_events: bool = True
     draw_debug_panel: bool = False
     draw_plates: bool = True
+    show_faces: bool = True
+    draw_faces: bool = True
     human_options: HumanDebugOptions = field(default_factory=HumanDebugOptions)
 
 
@@ -217,6 +219,64 @@ class OverlayRenderer:
                     for idx, line in enumerate(lines):
                         ty = py1 + 14 + (idx * line_h)
                         cv2.putText(canvas, line, (px1 + 6, ty), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+
+        # 5c. Render Face Matching Overlays
+        show_faces = getattr(self.options, "show_faces", True) and getattr(self.options, "draw_faces", True)
+        if show_faces and hasattr(presentation, "face_boxes") and presentation.face_boxes:
+            for f_box in presentation.face_boxes:
+                is_identified = (f_box.state == "identified")
+                color = (0, 255, 0) if is_identified else (128, 128, 128)
+                thick = 2 if is_identified else 1
+
+                # Draw box
+                cv2.rectangle(canvas, (f_box.x1, f_box.y1), (f_box.x2, f_box.y2), color=color, thickness=thick)
+
+                label_text = f_box.label
+                if not label_text:
+                    if is_identified:
+                        label_text = f"{f_box.person_id} {f_box.similarity:.2f}"
+                    else:
+                        label_text = f"Face #{f_box.track_id}"
+
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.50
+                fthick = 1
+
+                (tw, th), baseline = cv2.getTextSize(label_text, font, scale, fthick)
+                pill_w = tw + 10
+                pill_h = th + 8
+
+                if f_box.y1 > pill_h + 6:
+                    py1 = f_box.y1 - pill_h - 4
+                    py2 = py1 + pill_h
+                else:
+                    py1 = f_box.y2 + 4
+                    py2 = py1 + pill_h
+
+                px1 = f_box.x1
+                px2 = px1 + pill_w
+
+                img_h, img_w = canvas.shape[:2]
+                if px2 > img_w:
+                    px2 = img_w - 2
+                    px1 = max(0, px2 - pill_w)
+                if py2 > img_h:
+                    py2 = img_h - 2
+                    py1 = max(0, py2 - pill_h)
+
+                cv2.rectangle(canvas, (px1, py1), (px2, py2), color=(20, 20, 20), thickness=-1)
+                cv2.rectangle(canvas, (px1, py1), (px2, py2), color=color, thickness=1)
+
+                cv2.putText(
+                    canvas,
+                    label_text,
+                    (px1 + 5, py1 + th + 3),
+                    font,
+                    scale,
+                    (255, 255, 255),
+                    fthick,
+                    lineType=cv2.LINE_AA,
+                )
 
         # 5b. Render Vehicle License Plate Overlays
         if getattr(self.options, "draw_plates", True) and hasattr(presentation, "plate_boxes") and presentation.plate_boxes:
