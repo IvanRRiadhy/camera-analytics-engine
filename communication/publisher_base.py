@@ -127,6 +127,7 @@ class EventPublisher(ABC):
             "running": self._is_running,
             "state": self._state.value,
             "published_count": self.metrics.published_count,
+            "success_count": self.metrics.published_count,
             "failed_count": self.metrics.failed_count,
             "retry_count": self.metrics.retry_count,
             "avg_latency_ms": self.metrics.avg_latency_ms,
@@ -179,30 +180,48 @@ class EventPublisher(ABC):
         plugins = payload_dict.get("plugins", {})
         return json.dumps(plugins, sort_keys=True)
 
-    def publish_raw(self, exchange: str, routing_key: str, payload_dict: Dict[str, Any]) -> bool:
+    def publish_raw(
+        self,
+        exchange: str,
+        routing_key: str,
+        payload_dict: Dict[str, Any],
+        is_snapshot: Optional[bool] = None,
+    ) -> bool:
         """Publish raw payload dictionary with per-publisher interval & independent change detection evaluation."""
         if not self._is_running or not self._enabled:
             return False
 
-        camera_id = str(payload_dict.get("cameraId", "default_camera"))
+        # Determine if payload is an analytics snapshot subject to change detection and throttling
+        if is_snapshot is None:
+            is_telemetry = (
+                "heartbeat" in exchange.lower()
+                or "register" in exchange.lower()
+                or "command" in exchange.lower()
+                or "heartbeat" in routing_key.lower()
+                or "register" in routing_key.lower()
+            )
+            is_snapshot = not is_telemetry and ("plugins" in payload_dict or "snapshot" in routing_key.lower())
+
+        camera_id = str(payload_dict.get("cameraId") or payload_dict.get("camera_id") or "default_camera")
         now = time.time()
 
-        # 1. Per-Publisher Interval Check
-        last_pub_time = self._last_published_times.get(camera_id, 0.0)
-        if (now - last_pub_time) < self.publish_interval_seconds:
-            return False
-
-        # 2. Independent Change Detection Check
-        if not self.ignore_change_detection:
-            sig = self._compute_snapshot_signature(payload_dict)
-            last_sig = self._last_published_signatures.get(camera_id, "")
-            if sig == last_sig:
+        if is_snapshot:
+            # 1. Per-Publisher Interval Check
+            last_pub_time = self._last_published_times.get(camera_id, 0.0)
+            if (now - last_pub_time) < self.publish_interval_seconds:
                 return False
-            self._last_published_signatures[camera_id] = sig
+
+            # 2. Independent Change Detection Check
+            if not self.ignore_change_detection:
+                sig = self._compute_snapshot_signature(payload_dict)
+                last_sig = self._last_published_signatures.get(camera_id, "")
+                if sig == last_sig:
+                    return False
+                self._last_published_signatures[camera_id] = sig
 
         try:
             res = self.on_publish_raw(exchange, routing_key, payload_dict)
-            if res:
+            if res and is_snapshot:
                 self._last_published_times[camera_id] = now
             return res
         except Exception as exc:
@@ -247,6 +266,12 @@ class EventPublisher(ABC):
         self.set_state(PublisherHealthState.FAILED, "Max retries exceeded")
         return False
 
+    def flush(self) -> None:
+        """Flush internal publisher buffers. Safe default no-op."""
+        if not self._is_running:
+            return
+        self.on_flush()
+
     def stop(self) -> None:
         """Stop background publisher loop or connection."""
         if not self._is_running:
@@ -266,5 +291,6 @@ class EventPublisher(ABC):
     # --- Virtual Lifecycle Hooks ---
     def on_initialize(self, config: Dict[str, Any]) -> None: pass
     def on_start(self) -> None: pass
+    def on_flush(self) -> None: pass
     def on_stop(self) -> None: pass
     def on_dispose(self) -> None: pass

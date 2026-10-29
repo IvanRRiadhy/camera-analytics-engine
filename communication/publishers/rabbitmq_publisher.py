@@ -98,10 +98,12 @@ class RabbitMQPublisher(EventPublisher):
             return False
 
         payload_str = json.dumps(payload_dict)
+        t_start = time.time()
 
         with self._lock:
             if self._channel is None or not self._channel.is_open or self._pika is None:
                 logger.debug("RabbitMQPublisher [%s] Channel closed or disconnected. Skipped publish to '%s'/'%s'.", self.name, exchange, routing_key)
+                self.metrics.record_failure("Channel closed or disconnected")
                 return False
 
             try:
@@ -123,10 +125,13 @@ class RabbitMQPublisher(EventPublisher):
                     body=payload_str,
                     properties=properties
                 )
+                latency_ms = (time.time() - t_start) * 1000.0
+                self.metrics.record_success(latency_ms)
                 logger.info("RabbitMQPublisher '%s' published to '%s'/'%s'", self.name, exchange, routing_key)
                 return True
             except Exception as exc:
                 self._is_healthy = False
+                self.metrics.record_failure(str(exc))
                 logger.error("RabbitMQPublisher '%s' publish failed: %s", self.name, exc)
                 return False
 
@@ -139,10 +144,9 @@ class RabbitMQPublisher(EventPublisher):
         try:
             payload_dict = json.loads(serialized_payload)
             res = self.publish_raw(exchange="cctv.analytics", routing_key="analytics.event", payload_dict=payload_dict)
-            latency_ms = (time.time() - t_start) * 1000.0
-            self.record_publish_metrics(success=res, latency_ms=latency_ms)
             return res
         except Exception as exc:
+            self.metrics.record_failure(str(exc))
             logger.error("RabbitMQPublisher '%s' publish error: %s", self.name, exc)
             return False
 

@@ -48,7 +48,7 @@ class LogPublisher(EventPublisher):
         super().__init__(name=name, enabled=enabled, **kwargs)
         self._log_dir = Path(log_dir)
         self._human_filename = human_filename
-        self._ndjson_filename = ndjson_filename
+        self._ndjson_filename = kwargs.get("filename_pattern", ndjson_filename)
         self._max_bytes = max_bytes
         self._max_backup_files = max_backup_files
         self._keep_last_days = keep_last_days
@@ -183,6 +183,14 @@ class LogPublisher(EventPublisher):
             return self.on_publish_raw("cctv.analytics", "analytics.event", p_dict)
         except Exception:
             return False
+
+    def on_flush(self) -> None:
+        """Flush open file handles."""
+        with self._lock:
+            if self._human_handle and not self._human_handle.closed:
+                self._human_handle.flush()
+            if self._ndjson_handle and not self._ndjson_handle.closed:
+                self._ndjson_handle.flush()
 
     def _format_human_readable(self, s: Dict[str, Any]) -> str:
         cam_id = s.get("cameraId", "Unknown")

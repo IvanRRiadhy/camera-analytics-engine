@@ -51,6 +51,7 @@ class MQTTPublisher(EventPublisher):
         broker: str = "localhost",
         port: int = 1883,
         topic: str = "camera/{camera_id}/analytics/events",
+        raw_topic: str = "cctv/{routing_key}",
         qos: int = 1,
         retain: bool = False,
         client_id: Optional[str] = None,
@@ -60,6 +61,7 @@ class MQTTPublisher(EventPublisher):
         self._broker_host = broker
         self._broker_port = port
         self._topic_template = topic
+        self._raw_topic_template = raw_topic
         self._qos = qos
         self._retain = retain
         self._client_id = client_id or f"camera_analytics_{id(self)}"
@@ -83,6 +85,7 @@ class MQTTPublisher(EventPublisher):
 
         self._broker_port = config.get("port", self._broker_port)
         self._topic_template = config.get("topic", self._topic_template)
+        self._raw_topic_template = config.get("raw_topic", self._raw_topic_template)
         self._qos = config.get("qos", self._qos)
         self._retain = config.get("retain", self._retain)
         self._keepalive = config.get("keepalive", self._keepalive)
@@ -140,7 +143,7 @@ class MQTTPublisher(EventPublisher):
             # Fallback mock log when paho-mqtt unavailable or broker not connected
             logger.debug("MQTTPublisher [Fallback Mock] Topic '%s': %s", target_topic, serialized_payload[:80])
             latency_ms = (time.time() - t_start) * 1000.0
-            self.record_publish_metrics(success=True, latency_ms=latency_ms)
+            self.metrics.record_success(latency_ms)
             return True
 
         try:
@@ -152,12 +155,56 @@ class MQTTPublisher(EventPublisher):
             )
             success = info.rc == self._paho.MQTT_ERR_SUCCESS
             latency_ms = (time.time() - t_start) * 1000.0
-            self.record_publish_metrics(success=success, latency_ms=latency_ms)
+            if success:
+                self.metrics.record_success(latency_ms)
+            else:
+                self.metrics.record_failure(f"MQTT publish returned rc={info.rc}")
             return success
         except Exception as exc:
             self._is_healthy = False
             logger.error("MQTTPublisher '%s' publish error on topic '%s': %s", self.name, target_topic, exc)
-            self.record_publish_metrics(success=False, latency_ms=0.0)
+            self.metrics.record_failure(str(exc))
+            return False
+
+    def on_publish_raw(self, exchange: str, routing_key: str, payload_dict: dict[str, Any]) -> bool:
+        """Publish raw payload dictionary (heartbeat, registration, snapshot) over MQTT."""
+        if not self._is_running or not self._enabled:
+            return False
+
+        t_start = time.time()
+        cam_id = str(payload_dict.get("cameraId") or payload_dict.get("camera_id") or "system")
+        try:
+            target_topic = self._raw_topic_template.format(camera_id=cam_id, routing_key=routing_key, exchange=exchange)
+        except Exception:
+            target_topic = f"cctv/{routing_key}"
+
+        import json
+        serialized = json.dumps(payload_dict, separators=(",", ":"))
+
+        if self._client is None or self._paho is None or not self._is_connected:
+            logger.debug("MQTTPublisher [Fallback Mock Raw] Topic '%s': %s", target_topic, serialized[:80])
+            latency_ms = (time.time() - t_start) * 1000.0
+            self.metrics.record_success(latency_ms)
+            return True
+
+        try:
+            info = self._client.publish(
+                topic=target_topic,
+                payload=serialized,
+                qos=self._qos,
+                retain=self._retain,
+            )
+            success = info.rc == self._paho.MQTT_ERR_SUCCESS
+            latency_ms = (time.time() - t_start) * 1000.0
+            if success:
+                self.metrics.record_success(latency_ms)
+            else:
+                self.metrics.record_failure(f"MQTT publish raw returned rc={info.rc}")
+            return success
+        except Exception as exc:
+            self._is_healthy = False
+            self.metrics.record_failure(str(exc))
+            logger.error("MQTTPublisher '%s' publish_raw error on topic '%s': %s", self.name, target_topic, exc)
             return False
 
     def on_stop(self) -> None:

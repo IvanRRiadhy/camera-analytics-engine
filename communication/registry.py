@@ -98,6 +98,12 @@ class PublisherRegistry:
         cls._ensure_defaults()
         return type_name.strip().lower() in cls._registry
 
+    @classmethod
+    def clear(cls) -> None:
+        """Reset registered publisher types (test support hook)."""
+        cls._registry.clear()
+        cls._ensure_defaults()
+
 
 def register_publisher(type_name: str) -> Callable[[Type[EventPublisher]], Type[EventPublisher]]:
     """Standalone decorator shorthand for PublisherRegistry.register."""

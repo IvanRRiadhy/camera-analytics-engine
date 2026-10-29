@@ -71,12 +71,26 @@ class CommunicationManager:
         self._publish_times: list[float] = []
 
     @classmethod
-    def get_instance(cls) -> CommunicationManager:
+    def get_instance(cls, queue_size: int = 10000) -> CommunicationManager:
         """Singleton accessor for CommunicationManager."""
         with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = CommunicationManager()
+                cls._instance = CommunicationManager(queue_size=queue_size)
+            elif queue_size != cls._instance._queue_size:
+                logger.warning(
+                    "CommunicationManager singleton already initialized with queue_size=%d; requested queue_size=%d ignored.",
+                    cls._instance._queue_size,
+                    queue_size,
+                )
             return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset singleton instance (test support hook)."""
+        with cls._instance_lock:
+            if cls._instance is not None:
+                cls._instance.dispose()
+                cls._instance = None
 
     @property
     def publisher_manager(self) -> PublisherManager:
@@ -150,9 +164,15 @@ class CommunicationManager:
 
     def publish_snapshot(self, snapshot_dict: dict[str, Any]) -> bool:
         """Dispatch camera analytics snapshot payload directly to active EventPublisher instances."""
-        return self.publish_raw("cctv.analytics", "analytics.snapshot", snapshot_dict)
+        return self.publish_raw("cctv.analytics", "analytics.snapshot", snapshot_dict, is_snapshot=True)
 
-    def publish_raw(self, exchange: str, routing_key: str, payload_dict: dict[str, Any]) -> bool:
+    def publish_raw(
+        self,
+        exchange: str,
+        routing_key: str,
+        payload_dict: dict[str, Any],
+        is_snapshot: Optional[bool] = None,
+    ) -> bool:
         """Publish a raw payload dictionary directly to all active EventPublisher instances using publish_raw template method."""
         if not self._is_running or self._stop_event.is_set():
             return False
@@ -160,7 +180,7 @@ class CommunicationManager:
         success = False
         for pub_name, pub in self._publisher_manager.publishers.items():
             try:
-                res = pub.publish_raw(exchange, routing_key, payload_dict)
+                res = pub.publish_raw(exchange, routing_key, payload_dict, is_snapshot=is_snapshot)
                 if res:
                     success = True
             except Exception as exc:
