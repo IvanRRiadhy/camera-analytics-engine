@@ -14,7 +14,7 @@ import time
 from typing import Any, Optional
 
 from camera_analytics.communication.models import StandardAnalyticsEvent
-from camera_analytics.communication.publisher_base import EventPublisher
+from camera_analytics.communication.publisher_base import EventPublisher, PublisherHealthState
 from camera_analytics.communication.registry import PublisherRegistry
 
 logger = logging.getLogger(__name__)
@@ -30,8 +30,8 @@ class RabbitMQPublisher(EventPublisher):
         host: RabbitMQ Host.
         port: RabbitMQ Port.
         vhost: Virtual host.
-        username: Username for authentication.
-        password: Password for authentication.
+        username: Username for authentication (e.g. ${RABBITMQ_USER}).
+        password: Password for authentication (e.g. ${RABBITMQ_PASSWORD}).
     """
 
     def __init__(
@@ -41,8 +41,8 @@ class RabbitMQPublisher(EventPublisher):
         host: str = "localhost",
         port: int = 5672,
         vhost: str = "cctv_vhost",
-        username: str = "cctv_admin",
-        password: str = "SecureCctvPass123",
+        username: Optional[str] = None,
+        password: Optional[str] = None,
     ) -> None:
         super().__init__(name=name, enabled=enabled)
         self._host = host
@@ -50,6 +50,7 @@ class RabbitMQPublisher(EventPublisher):
         self._vhost = vhost
         self._username = username
         self._password = password
+        self._is_healthy = False
 
         self._pika: Any = None
         self._connection: Any = None
@@ -64,9 +65,36 @@ class RabbitMQPublisher(EventPublisher):
         self._username = config.get("username", self._username)
         self._password = config.get("password", self._password)
 
+    def start(self) -> None:
+        """Start the publisher client and establish broker connection."""
+        if not self._is_initialized:
+            raise RuntimeError(f"Cannot start EventPublisher '{self._name}': not initialized.")
+        if self._is_running or not self._enabled:
+            return
+
+        if not self._username or not self._password:
+            logger.warning(
+                "RabbitMQPublisher '%s' is enabled but missing credentials (username or password is None). "
+                "Transitioning to FAILED state and skipping connection.",
+                self.name,
+            )
+            self._is_running = False
+            self.set_state(PublisherHealthState.FAILED, "Missing RabbitMQ credentials")
+            return
+
+        super().start()
+
     def on_start(self) -> None:
         """Connect to RabbitMQ broker."""
         with self._lock:
+            if not self._username or not self._password:
+                logger.warning(
+                    "RabbitMQPublisher '%s' missing required credentials. Connection aborted.",
+                    self.name,
+                )
+                self.set_state(PublisherHealthState.FAILED, "Missing RabbitMQ credentials")
+                return
+
             try:
                 import pika
                 self._pika = pika
@@ -90,6 +118,7 @@ class RabbitMQPublisher(EventPublisher):
                 logger.info("RabbitMQPublisher '%s' connected to %s:%d (vhost: %s)", self.name, self._host, self._port, self._vhost)
             except Exception as exc:
                 self._is_healthy = False
+                self.set_state(PublisherHealthState.FAILED, f"Connection error: {exc}")
                 logger.error("RabbitMQPublisher '%s' failed to connect: %s", self.name, exc)
 
     def publish_raw(self, exchange: str, routing_key: str, payload_dict: dict[str, Any]) -> bool:

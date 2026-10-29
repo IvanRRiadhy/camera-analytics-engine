@@ -32,6 +32,7 @@ class EngineConfig:
     mode: str = "standalone"
     log_level: str = "INFO"
     schema_version: str = "1.0.0"
+    application_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)

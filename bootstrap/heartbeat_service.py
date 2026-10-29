@@ -8,10 +8,12 @@ containing CPU/GPU metrics, active stream telemetry, and service runtime health.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Any, Optional
 
+from camera_analytics.config.identity import resolve_application_id
 from camera_analytics.diagnostics.collector import HardwareDiagnosticCollector
 
 logger = logging.getLogger(__name__)
@@ -27,12 +29,20 @@ class EngineHeartbeatService:
         pipeline_coordinator: Optional[Any] = None,
         service_runtime: Optional[Any] = None,
         interval_sec: float = 5.0,
+        application_id: Optional[str] = None,
+        config: Optional[Any] = None,
+        mode: str = "standalone",
     ) -> None:
         self.instance_id = instance_id
         self.comm_manager = comm_manager
         self.pipeline_coordinator = pipeline_coordinator
         self.service_runtime = service_runtime
         self.interval_sec = interval_sec
+        self.application_id = resolve_application_id(
+            config=config,
+            mode=mode,
+            application_id=application_id,
+        )
         self.collector = HardwareDiagnosticCollector()
         self.sequence_number = 0
         self._thread: Optional[threading.Thread] = None
@@ -73,7 +83,7 @@ class EngineHeartbeatService:
 
                 payload = {
                     "instance_id": self.instance_id,
-                    "application_id": "00000000-0000-0000-0000-000000000001",
+                    "application_id": self.application_id,
                     "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "sequence_number": self.sequence_number,
                     "system_metrics": sys_metrics,

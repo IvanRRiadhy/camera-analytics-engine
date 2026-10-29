@@ -7,10 +7,11 @@ directly from the ASP.NET Core Backend REST API endpoints (/api/v1/spatial/camer
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Any, Optional
 import urllib.request
-import json
 import uuid
 
 from camera_analytics.bootstrap.models import (
@@ -22,6 +23,8 @@ from camera_analytics.bootstrap.models import (
     PublishersConfig,
 )
 from camera_analytics.bootstrap.providers.base import ConfigurationProvider
+from camera_analytics.config.env_expander import expand_env_vars
+from camera_analytics.config.identity import resolve_application_id
 from camera_analytics.config.schema import (
     AnalyticsConfig,
     AppConfig,
@@ -57,7 +60,8 @@ class BackendConfigurationProvider(ConfigurationProvider):
             req = urllib.request.Request(f"{self.backend_url}/api/v1/engine/runtime/bootstrap")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 if resp.status == 200:
-                    bootstrap_data = json.loads(resp.read().decode("utf-8"))
+                    raw_json = json.loads(resp.read().decode("utf-8"))
+                    bootstrap_data = expand_env_vars(raw_json, allowlist_prefix="CCTV_")
                     pipelines_raw = bootstrap_data.get("pipelines", [])
                     logger.info("[+] Successfully fetched bootstrap configuration for %d pipeline(s) from Backend API.", len(pipelines_raw))
         except Exception as exc:
@@ -71,7 +75,10 @@ class BackendConfigurationProvider(ConfigurationProvider):
                 cam_data = target_pipe.get("camera", {})
                 camera_id = str(cam_data.get("cameraId", "c1"))
                 camera_name = str(cam_data.get("name", "CAM-01 Main Lobby"))
-                rtsp_url = str(cam_data.get("rtspUrl", "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2"))
+                rtsp_url_raw = cam_data.get("rtspUrl") or os.getenv("RTSP_URL") or os.getenv("CAMERA_RTSP_URL")
+                if not rtsp_url_raw:
+                    raise RuntimeError("Missing required RTSP URL in backend configuration or RTSP_URL environment variable.")
+                rtsp_url = str(rtsp_url_raw)
                 pipeline_id = str(target_pipe.get("pipelineId", f"pipeline_{camera_id.replace('-', '_')}"))
 
                 assigned_mods_raw = target_pipe.get("assignedModules", [])
@@ -121,7 +128,9 @@ class BackendConfigurationProvider(ConfigurationProvider):
         else:
             # Fallback default camera configuration when backend API is starting up
             fallback_cam_id = "cam_01_default"
-            fallback_rtsp = "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2"
+            fallback_rtsp = os.getenv("RTSP_URL") or os.getenv("CAMERA_RTSP_URL")
+            if not fallback_rtsp:
+                raise RuntimeError("Missing required RTSP URL in environment (RTSP_URL) for fallback camera configuration.")
             cam_obj = Camera(
                 camera_id=fallback_cam_id,
                 name="Default RTSP Camera",
@@ -148,12 +157,23 @@ class BackendConfigurationProvider(ConfigurationProvider):
             )
             pipeline_configs.append(pipe_cfg)
 
+        app_id = resolve_application_id(mode="enterprise")
         engine_cfg = EngineConfig(
             engine_id="engine_edge_01",
             node_id=str(uuid.uuid5(uuid.NAMESPACE_DNS, "engine_edge_01")),
             hostname="engine_edge_host",
             mode="enterprise",
+            application_id=app_id,
         )
+
+        rmq_user = os.getenv("RABBITMQ_USER") or os.getenv("RABBITMQ_USERNAME")
+        rmq_pass = os.getenv("RABBITMQ_PASSWORD")
+        if not rmq_user or not rmq_pass:
+            raise RuntimeError("Missing required RabbitMQ credentials in environment (RABBITMQ_USER, RABBITMQ_PASSWORD) in enterprise mode.")
+
+        rmq_host = os.getenv("RABBITMQ_HOST", "localhost")
+        rmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
+        rmq_vhost = os.getenv("RABBITMQ_VHOST", "cctv_vhost")
 
         publishers_cfg = PublishersConfig(
             publishers=(
@@ -161,7 +181,13 @@ class BackendConfigurationProvider(ConfigurationProvider):
                     publisher_type="rabbitmq",
                     name="rabbitmq_events",
                     enabled=True,
-                    settings={"host": "localhost", "port": 5672, "vhost": "cctv_vhost", "username": "cctv_admin", "password": "SecureCctvPass123"},
+                    settings={
+                        "host": rmq_host,
+                        "port": rmq_port,
+                        "vhost": rmq_vhost,
+                        "username": rmq_user,
+                        "password": rmq_pass,
+                    },
                 ),
             )
         )

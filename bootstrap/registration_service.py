@@ -8,6 +8,7 @@ constructing and publishing an EngineRegistrationRequest payload to the message 
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import socket
 import time
@@ -17,6 +18,7 @@ from typing import Any, Optional
 import psutil
 import torch
 
+from camera_analytics.config.identity import resolve_application_id
 from camera_analytics.diagnostics.collector import HardwareDiagnosticCollector
 
 logger = logging.getLogger(__name__)
@@ -31,11 +33,19 @@ class EngineRegistrationService:
         comm_manager: Any,
         plugin_scanner: Optional[Any] = None,
         engine_version: str = "12.6.0",
+        application_id: Optional[str] = None,
+        config: Optional[Any] = None,
+        mode: str = "standalone",
     ) -> None:
         self.instance_id = instance_id
         self.comm_manager = comm_manager
         self.plugin_scanner = plugin_scanner
         self.engine_version = engine_version
+        self.application_id = resolve_application_id(
+            config=config,
+            mode=mode,
+            application_id=application_id,
+        )
         self.hardware_collector = HardwareDiagnosticCollector()
 
     def build_registration_payload(self) -> dict[str, Any]:
@@ -81,7 +91,7 @@ class EngineRegistrationService:
 
         return {
             "instance_id": self.instance_id,
-            "application_id": "00000000-0000-0000-0000-000000000001",
+            "application_id": self.application_id,
             "worker_node_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, hostname)),
             "hostname": hostname,
             "ip_address": ip_address,

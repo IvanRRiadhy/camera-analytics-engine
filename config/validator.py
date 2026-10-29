@@ -80,17 +80,27 @@ class StandaloneConfigValidator:
                 raise ConfigValidationError(f"Camera '{cam_id}' field 'zones' must be a JSON array.")
 
             seen_zone_ids = set()
+            valid_zone_count = 0
             for z_idx, zone in enumerate(zones):
                 if not isinstance(zone, dict):
                     raise ConfigValidationError(f"Camera '{cam_id}' zone at index {z_idx} must be a JSON object.")
 
-                z_id = zone.get("zone_id")
-                if not z_id or not isinstance(z_id, str):
-                    raise ConfigValidationError(f"Camera '{cam_id}' zone at index {z_idx} missing required string 'zone_id'.")
+                z_id = str(
+                    zone.get("zone_id")
+                    or zone.get("id")
+                    or zone.get("zoneId")
+                    or f"z_{valid_zone_count}"
+                )
 
                 if z_id in seen_zone_ids:
-                    raise ConfigValidationError(f"Camera '{cam_id}' contains duplicate zone_id '{z_id}'.")
+                    logger.warning(
+                        "StandaloneConfigValidator: Camera '%s' contains duplicate zone_id '%s'. Skipping duplicate zone.",
+                        cam_id,
+                        z_id,
+                    )
+                    continue
                 seen_zone_ids.add(z_id)
+                valid_zone_count += 1
 
                 z_type = str(zone.get("type", zone.get("zone_type", "REGION"))).upper()
                 points = zone.get("points", [])
@@ -115,4 +125,30 @@ class StandaloneConfigValidator:
                         f"Camera '{cam_id}' line zone '{z_id}' requires at least 2 points (got {len(points)})."
                     )
 
+        # 3. Check Top-level Messaging Configuration
+        StandaloneConfigValidator.validate_messaging(raw_data)
+
         logger.debug("StandaloneConfigValidator: Validation passed cleanly.")
+
+    @staticmethod
+    def validate_messaging(raw_data: Dict[str, Any]) -> None:
+        """Validate top-level messaging block, logging WARNING for unknown keys."""
+        messaging_dict = raw_data.get("messaging")
+        if isinstance(messaging_dict, dict):
+            known_keys = {
+                "snapshot",
+                "privacy",
+                "publishers",
+                "timezone",
+                "reset_policy",
+                "envelope",
+                "spool",
+                "routing",
+                "rabbitmq",
+            }
+            for k in messaging_dict:
+                if k not in known_keys:
+                    logger.warning(
+                        "StandaloneConfigValidator: Unknown key '%s' found in top-level 'messaging' configuration block.",
+                        k,
+                    )

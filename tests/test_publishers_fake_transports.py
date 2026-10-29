@@ -54,7 +54,7 @@ class TestMessagingSlice1(unittest.TestCase):
         fake_pika.BlockingConnection.return_value = fake_conn
         fake_conn.channel.return_value = fake_channel
 
-        pub = RabbitMQPublisher(name="fake_rmq")
+        pub = RabbitMQPublisher(name="fake_rmq", username="test_user", password="test_password")
         pub.initialize({})
 
         # Inject fake pika before start
@@ -90,7 +90,7 @@ class TestMessagingSlice1(unittest.TestCase):
         fake_pika.BlockingConnection.return_value = fake_conn
         fake_conn.channel.return_value = fake_channel
 
-        pub = RabbitMQPublisher(name="fake_rmq_fail")
+        pub = RabbitMQPublisher(name="fake_rmq_fail", username="test_user", password="test_password")
         pub.initialize({})
 
         with patch.dict("sys.modules", {"pika": fake_pika}):

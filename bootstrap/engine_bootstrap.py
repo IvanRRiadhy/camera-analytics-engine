@@ -170,6 +170,7 @@ class EngineBootstrap:
                 reg_service = EngineRegistrationService(
                     instance_id=snapshot.engine.engine_id,
                     comm_manager=comm_manager,
+                    application_id=snapshot.engine.application_id,
                 )
                 reg_service.register()
                 service_registry.register("registration_service", reg_service)
@@ -179,6 +180,7 @@ class EngineBootstrap:
                     comm_manager=comm_manager,
                     pipeline_coordinator=coordinator,
                     interval_sec=5.0,
+                    application_id=snapshot.engine.application_id,
                 )
                 hb_service.start()
                 service_registry.register("heartbeat_service", hb_service)

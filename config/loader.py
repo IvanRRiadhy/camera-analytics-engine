@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from camera_analytics.config.env_expander import expand_env_vars
 from camera_analytics.config.schema import (
     AnalyticsConfig,
     AppConfig,
@@ -63,6 +64,8 @@ class ConfigLoader:
         """
         if not isinstance(data, dict):
             raise ConfigValidationError("Root configuration must be a dictionary.")
+
+        data = expand_env_vars(data)
 
         camera_cfg = cls._load_camera(data.get("camera", {}))
         source_cfg = cls._load_source(data.get("source", {}))

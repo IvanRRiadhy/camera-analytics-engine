@@ -22,6 +22,8 @@ from camera_analytics.bootstrap.models import (
     PublishersConfig,
 )
 from camera_analytics.bootstrap.providers.base import ConfigurationProvider
+from camera_analytics.config.env_expander import expand_env_vars
+from camera_analytics.config.identity import resolve_application_id
 from camera_analytics.config.schema import (
     AnalyticsConfig,
     AppConfig,
@@ -65,13 +67,19 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
         with open(self._config_file_path, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
 
+        raw_data = expand_env_vars(raw_data)
+
         # Validate configuration structure fast-failing on errors
         StandaloneConfigValidator.validate(raw_data)
 
-        return self.parse_dict(raw_data)
+        return self.parse_dict(raw_data, expand=False)
 
-    def parse_dict(self, raw_data: Dict[str, Any]) -> ConfigurationSnapshot:
+    def parse_dict(self, raw_data: Dict[str, Any], expand: bool = True) -> ConfigurationSnapshot:
         """Parse raw dictionary into a strongly typed ConfigurationSnapshot."""
+        if expand:
+            raw_data = expand_env_vars(raw_data)
+        StandaloneConfigValidator.validate_messaging(raw_data)
+
         engine_dict = raw_data.get("engine", {})
         runtime_dict = raw_data.get("runtime", {})
         comm_dict = raw_data.get("communication", {})
@@ -79,6 +87,8 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
 
         # Version Metadata
         schema_version = raw_data.get("schema_version", "2.0.0")
+
+        app_id = resolve_application_id(config=raw_data, mode="standalone")
 
         # 1. Engine Configuration
         engine_cfg = EngineConfig(
@@ -88,6 +98,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
             mode="standalone",
             log_level=engine_dict.get("log_level", "INFO"),
             schema_version=schema_version,
+            application_id=app_id,
         )
 
         # 2. Runtime Configuration
@@ -151,8 +162,29 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
 
             # Parse Zones for this camera
             zones_dict: Dict[str, Zone] = {}
-            for z_raw in cam_data.get("zones", []):
-                z_id = z_raw.get("zone_id", "z_default")
+            seen_zone_ids: set[str] = set()
+            loaded_raw_zones: list[dict[str, Any]] = []
+
+            for idx, z_raw in enumerate(cam_data.get("zones", [])):
+                z_id = str(
+                    z_raw.get("zone_id")
+                    or z_raw.get("id")
+                    or z_raw.get("zoneId")
+                    or f"z_{len(zones_dict)}"
+                )
+                if z_id in seen_zone_ids:
+                    logger.warning(
+                        "StandaloneConfigurationProvider: Duplicate zone_id '%s' detected for camera '%s'. Skipping duplicate zone.",
+                        z_id,
+                        cam_id,
+                    )
+                    continue
+                seen_zone_ids.add(z_id)
+
+                z_raw_copy = dict(z_raw)
+                z_raw_copy["zone_id"] = z_id
+                loaded_raw_zones.append(z_raw_copy)
+
                 z_name = z_raw.get("name", z_id)
                 z_type_str = str(z_raw.get("type", z_raw.get("zone_type", "REGION"))).upper()
                 if z_type_str == "POLYGON":
@@ -179,7 +211,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                 source=rtsp_url,
                 fps=fps,
                 zones=zones_dict,
-                raw_zones_payload=cam_data.get("zones", []),
+                raw_zones_payload=loaded_raw_zones,
                 status=CameraStatus.ONLINE,
             )
             cameras_map[cam_id] = camera_obj
@@ -299,7 +331,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                     name=cam_name,
                     fps=fps,
                     zones=tuple(zones_dict.values()),
-                    raw_zones_payload=tuple(cam_data.get("zones", [])),
+                    raw_zones_payload=tuple(loaded_raw_zones),
                 ),
                 source=SourceConfig(source_type="rtsp", uri=rtsp_url, params=source_params),
                 detector=DetectorConfig(device=device),
