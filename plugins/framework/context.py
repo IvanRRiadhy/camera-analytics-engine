@@ -14,7 +14,7 @@ class PluginContext:
     camera_id: str
     engine_instance_id: str = "engine_edge_01"
     camera_name: str = "CAM-01 Main Lobby"
-    rtsp_url: str = "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2"
+    rtsp_url: str = ""
     config: dict[str, Any] = field(default_factory=dict)
     publisher: Any = None
     event_bus: Optional[RuntimeEventBus] = field(default_factory=RuntimeEventBus.get_instance)
