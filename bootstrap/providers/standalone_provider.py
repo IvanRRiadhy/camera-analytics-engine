@@ -358,6 +358,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
             runtime=runtime_cfg,
             publishers=publishers_cfg,
             pipelines=tuple(pipeline_configs.values()),
+            messaging=raw_data.get("messaging"),
         )
 
     def _build_empty_snapshot(self) -> ConfigurationSnapshot:

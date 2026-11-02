@@ -203,4 +203,5 @@ class BackendConfigurationProvider(ConfigurationProvider):
             pipelines=pipeline_configs,
             publishers=publishers_cfg,
             runtime=runtime_cfg,
+            messaging=bootstrap_data.get("messaging"),
         )

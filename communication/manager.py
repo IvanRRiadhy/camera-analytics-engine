@@ -8,6 +8,7 @@ processing loops, tracks communication runtime metrics, and handles graceful shu
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
@@ -15,10 +16,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
+from camera_analytics.communication.envelope import EventEnvelopeV1, EnvelopedEvent
 from camera_analytics.communication.models import (
     AnalyticsEventSerializer,
     StandardAnalyticsEvent,
+    _json_default,
 )
+from camera_analytics.communication.privacy import PrivacyFilter, PrivacyConfig
 from camera_analytics.communication.publisher_base import EventPublisher
 from camera_analytics.communication.publisher_manager import PublisherManager
 from camera_analytics.communication.router import EventRouter
@@ -54,6 +58,8 @@ class CommunicationManager:
         self._router = EventRouter()
         self._publisher_manager = PublisherManager()
         self._serializer = AnalyticsEventSerializer()
+        self._envelope_v1 = EventEnvelopeV1()
+        self._privacy_filter = PrivacyFilter()
 
         self._stop_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
@@ -187,6 +193,40 @@ class CommunicationManager:
                 logger.error("Publisher '%s' publish_raw error: %s", pub_name, exc)
         return success
 
+    def configure_envelope_privacy(
+        self,
+        privacy_config: Optional[PrivacyConfig] = None,
+        instance_id: Optional[str] = None,
+        application_id: Optional[str] = None,
+        mode: str = "standalone",
+    ) -> None:
+        """Configure Envelope v1 and Privacy Filter parameters on the main thread."""
+        from camera_analytics.config.identity import resolve_application_id
+
+        resolved_app_id = resolve_application_id(
+            mode=mode,
+            application_id=application_id,
+        )
+        self._privacy_filter = PrivacyFilter(config=privacy_config)
+        self._envelope_v1 = EventEnvelopeV1(
+            instance_id=instance_id,
+            application_id=resolved_app_id,
+            mode=mode,
+        )
+
+    def process_envelope_and_privacy(self, event: Any) -> tuple[EnvelopedEvent, str]:
+        """Wrap event in Envelope v1, apply PrivacyFilter, and serialize (single chokepoint before fan-out)."""
+        enveloped_dict = self._envelope_v1.wrap(event)
+        filtered_dict = self._privacy_filter.filter_event(enveloped_dict)
+        json_payload = json.dumps(
+            filtered_dict,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        )
+        enveloped_event = EnvelopedEvent(filtered_dict)
+        return enveloped_event, json_payload
+
     def enqueue(self, event: StandardAnalyticsEvent) -> bool:
         """Enqueue an Analytics Event for asynchronous publishing without blocking AI Pipeline."""
         if not self._is_running or self._stop_event.is_set():
@@ -273,12 +313,14 @@ class CommunicationManager:
 
             t0 = time.monotonic()
             try:
+                # Single chokepoint: Envelope v1 + Privacy Filter before fan-out
+                enveloped_event, json_payload = self.process_envelope_and_privacy(event)
+
                 active_names = list(self._publisher_manager.publishers.keys())
-                target_names = self._router.route(event, active_names)
-                json_payload = self._serializer.serialize(event)
+                target_names = self._router.route(enveloped_event, active_names)
 
                 if self._publisher_manager.is_running:
-                    succ, fail = self._publisher_manager.broadcast(event, json_payload, target_publishers=target_names)
+                    succ, fail = self._publisher_manager.broadcast(enveloped_event, json_payload, target_publishers=target_names)
                     duration_ms = (time.monotonic() - t0) * 1000.0
 
                     with self._metrics_lock:
@@ -304,10 +346,10 @@ class CommunicationManager:
         while not self._queue.empty():
             try:
                 event = self._queue.get_nowait()
+                enveloped_event, json_payload = self.process_envelope_and_privacy(event)
                 active_names = list(self._publisher_manager.publishers.keys())
-                target_names = self._router.route(event, active_names)
-                json_payload = self._serializer.serialize(event)
-                succ, fail = self._publisher_manager.broadcast(event, json_payload, target_publishers=target_names)
+                target_names = self._router.route(enveloped_event, active_names)
+                succ, fail = self._publisher_manager.broadcast(enveloped_event, json_payload, target_publishers=target_names)
                 with self._metrics_lock:
                     self._published_events += succ
                     self._failed_events += fail

@@ -352,8 +352,8 @@ class FaceMatchingPlugin(BaseAnalyticsPlugin):
                                 self.stats["events_emitted"] += 1
                                 self._cooldown_manager.record_emission(c_res.person_id, now_ts)
                                 logger.info(
-                                    "[Plugin:Face Matching] IDENTIFIED person '%s' (%s) on track %d (similarity: %.4f, margin: %.4f)",
-                                    c_res.person_id, top1_name, track.track_id, c_res.best_score, c_res.best_margin
+                                    "[Plugin:Face Matching] IDENTIFIED person '%s' on track %d (similarity: %.4f, margin: %.4f)",
+                                    c_res.person_id, track.track_id, c_res.best_score, c_res.best_margin
                                 )
                     else:
                         if track.state != "identified":

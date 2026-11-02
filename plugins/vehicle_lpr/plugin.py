@@ -203,7 +203,7 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                 s_dir = Path(self.config.snapshot_dir)
                 s_dir.mkdir(parents=True, exist_ok=True)
                 cam_id = getattr(context, "camera_id", "cam_default")
-                snap_filename = f"{cam_id}_{plate_str}_{int(now_ts * 1000)}.jpg"
+                snap_filename = f"{cam_id}_{tid}_{int(now_ts * 1000)}.jpg"
                 snap_path_obj = s_dir / snap_filename
                 temp_snap = s_dir / f".tmp_{snap_filename}"
                 cv2.imwrite(str(temp_snap), crop)
@@ -342,8 +342,8 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                                 self._cooldown_map[plate_str] = now_ts
                                 exp_t.has_emitted = True
                                 logger.info(
-                                    "[Plugin:Vehicle LPR] Emitted EXPIRY Plate: '%s' | Conf: %.3f | Votes: %d | Track: %d",
-                                    plate_str, plate_conf, v_res.total_votes, exp_tid
+                                    "[Plugin:Vehicle LPR] Emitted EXPIRY Track: %d | Conf: %.3f | Votes: %d | Status: %s",
+                                    exp_tid, plate_conf, v_res.total_votes, v_res.status
                                 )
                         del self._voting_engines[exp_tid]
 
@@ -515,8 +515,8 @@ class VehicleLPRPlugin(BaseAnalyticsPlugin):
                     self._cooldown_map[plate_str] = now_ts
                     track.has_emitted = True
                     logger.info(
-                        "[Plugin:Vehicle LPR] Emitted VEHICLE_LPR Plate: '%s' | Conf: %.3f | WinnerShare: %.2f | Track: %d",
-                        plate_str, plate_conf, voting_res.winner_share, tid
+                        "[Plugin:Vehicle LPR] Emitted VEHICLE_LPR Track: %d | Conf: %.3f | WinnerShare: %.2f | Status: %s",
+                        tid, plate_conf, voting_res.winner_share, voting_res.status
                     )
 
             # 4b. Export active plate tracks for viewer overlay

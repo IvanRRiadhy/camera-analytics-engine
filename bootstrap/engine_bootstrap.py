@@ -25,6 +25,7 @@ from camera_analytics.bootstrap.registration_service import EngineRegistrationSe
 from camera_analytics.bootstrap.service_registry import ServiceRegistry
 from camera_analytics.catalog.camera_catalog import CameraCatalog
 from camera_analytics.communication.manager import CommunicationManager
+from camera_analytics.communication.privacy import PrivacyConfig
 from camera_analytics.communication.publisher_base import EventPublisher
 from camera_analytics.communication.registry import PublisherRegistry
 from camera_analytics.config.loader import ConfigValidationError
@@ -258,6 +259,30 @@ class EngineBootstrap:
     def _initialize_publishers(self, snapshot: ConfigurationSnapshot) -> CommunicationManager:
         """Instantiate and register publisher plugins with the CommunicationManager singleton."""
         comm_manager = CommunicationManager.get_instance()
+
+        privacy_data = None
+        if hasattr(snapshot, "messaging") and isinstance(snapshot.messaging, dict):
+            privacy_data = snapshot.messaging.get("privacy")
+        privacy_cfg = PrivacyConfig.from_dict(privacy_data, mode=snapshot.engine.mode)
+        comm_manager.configure_envelope_privacy(
+            privacy_config=privacy_cfg,
+            instance_id=snapshot.engine.engine_id,
+            application_id=snapshot.engine.application_id,
+        )
+
+        logger.info(
+            "EngineBootstrap: Privacy configuration initialized (identity_mode: %s, plate_mode: %s)",
+            privacy_cfg.identity_mode,
+            privacy_cfg.plate_mode,
+        )
+        if str(snapshot.engine.mode).lower() == "enterprise" and (
+            privacy_cfg.identity_mode == "full" or privacy_cfg.plate_mode == "full"
+        ):
+            logger.warning(
+                "EngineBootstrap: Enterprise deployment running with unmasked privacy mode (identity_mode: %s, plate_mode: %s).",
+                privacy_cfg.identity_mode,
+                privacy_cfg.plate_mode,
+            )
 
         for pub_cfg in snapshot.publishers.publishers:
             if not pub_cfg.enabled:

@@ -8,7 +8,7 @@ pipeline configuration wrappers, runtime settings, and root configuration snapsh
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from camera_analytics.config.schema import AppConfig
 
@@ -118,3 +118,4 @@ class ConfigurationSnapshot:
     publishers: PublishersConfig
     runtime: EngineRuntimeConfig
     schema_version: str = "1.0.0"
+    messaging: Optional[dict[str, Any]] = field(default=None, repr=False)
