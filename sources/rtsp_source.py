@@ -81,7 +81,7 @@ class RTSPSource(FrameSource):
     @property
     def name(self) -> str:
         """Source name identifier."""
-        return f"rtsp_source:{self._rtsp_url}"
+        return f"rtsp_source:{redact_rtsp_url(self._rtsp_url)}"
 
     @property
     def is_open(self) -> bool:
