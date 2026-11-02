@@ -36,6 +36,7 @@ from camera_analytics.config.schema import (
 from camera_analytics.config.validator import StandaloneConfigValidator
 from camera_analytics.models.camera import Camera, CameraStatus
 from camera_analytics.models.zone import Point, Zone, ZoneType
+from camera_analytics.utils.url_sanitizer import redact_rtsp_url
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
             if src_val is not None and rtsp_val is not None and str(src_val) != str(rtsp_val):
                 logger.warning(
                     "StandaloneConfigurationProvider: Camera '%s' defines both 'source' ('%s') and 'rtsp_url' ('%s') with conflicting values. Precedence order: 'source' > 'rtsp_url' > '0'. Using 'source'.",
-                    cam_id, src_val, rtsp_val
+                    cam_id, redact_rtsp_url(str(src_val)), redact_rtsp_url(str(rtsp_val))
                 )
 
             rtsp_url = src_val if src_val is not None else (rtsp_val if rtsp_val is not None else "0")

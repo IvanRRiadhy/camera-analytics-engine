@@ -29,6 +29,7 @@ from camera_analytics.core import Config, EventBus, Pipeline
 from camera_analytics.models import Camera
 from camera_analytics.sources.rtsp_source import RTSPSource
 from camera_analytics.utils.resource_monitor import BenchmarkCollector
+from camera_analytics.utils.url_sanitizer import _redact_rtsp
 from camera_analytics.utils.visualizer import PoseVisualizer
 
 logger = logging.getLogger("validate_live_rtsp")
@@ -44,26 +45,6 @@ def _resolve_rtsp_url(cli_value: Optional[str] = None) -> str:
     if cam_url:
         return cam_url
     raise SystemExit("no RTSP URL: pass --rtsp-url or set RTSP_URL (or CAMERA_RTSP_URL)")
-
-
-def _redact_rtsp(url: Optional[str]) -> str:
-    if not url or not isinstance(url, str):
-        return "<unparseable>"
-    try:
-        parsed = urllib.parse.urlsplit(url)
-        if not parsed.scheme or not parsed.netloc:
-            return "<unparseable>"
-        host_port = parsed.hostname or ""
-        if not host_port:
-            return "<unparseable>"
-        if parsed.port:
-            host_port = f"{host_port}:{parsed.port}"
-        path = parsed.path
-        if parsed.username is not None or parsed.password is not None:
-            return f"{parsed.scheme}://<redacted>@{host_port}{path}"
-        return f"{parsed.scheme}://{host_port}{path}"
-    except Exception:
-        return "<unparseable>"
 
 
 def setup_logging() -> None:

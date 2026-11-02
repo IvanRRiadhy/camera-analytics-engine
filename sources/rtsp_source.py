@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import numpy as np
 
 from camera_analytics.sources.base import FramePacket, FrameSource, SourceMetadata
+from camera_analytics.utils.url_sanitizer import redact_rtsp_url
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -103,7 +104,7 @@ class RTSPSource(FrameSource):
         return SourceMetadata(
             resolution=self._resolution,
             fps=self._fps,
-            source_uri=self._rtsp_url,
+            source_uri=redact_rtsp_url(self._rtsp_url),
             total_frames=None,  # Unbounded live stream
             extra_info={
                 "format": "rtsp_live_stream",
@@ -131,11 +132,11 @@ class RTSPSource(FrameSource):
                 target=self._reader_loop, daemon=True, name="RTSPSourceReader"
             )
             self._thread.start()
-            logger.info("RTSPSource connected successfully: %s", self._rtsp_url)
+            logger.info("RTSPSource connected successfully: %s", redact_rtsp_url(self._rtsp_url))
         else:
             logger.warning(
                 "RTSPSource initial connection failed for '%s'. Starting background reconnect thread...",
-                self._rtsp_url,
+                redact_rtsp_url(self._rtsp_url),
             )
             self._is_open = True
             self._using_synthetic_fallback = True
@@ -190,7 +191,7 @@ class RTSPSource(FrameSource):
             self._latest_frame = None
 
         self._is_open = False
-        logger.info("RTSPSource released cleanly: %s", self._rtsp_url)
+        logger.info("RTSPSource released cleanly: %s", redact_rtsp_url(self._rtsp_url))
 
     # --- Internal Stream Capture & Reconnect Logic ---
 
@@ -231,13 +232,13 @@ class RTSPSource(FrameSource):
 
         while not self._stop_event.is_set():
             if self._cap is None or not self._cap.isOpened() or self._using_synthetic_fallback:
-                logger.info("Reconnect Started: attempting connection to '%s'", self._rtsp_url)
+                logger.info("Reconnect Started: attempting connection to '%s'", redact_rtsp_url(self._rtsp_url))
                 if self._connect_stream():
                     self._reconnect_count += 1
-                    logger.info("Reconnect Success (#%d) for '%s'", self._reconnect_count, self._rtsp_url)
+                    logger.info("Reconnect Success (#%d) for '%s'", self._reconnect_count, redact_rtsp_url(self._rtsp_url))
                 else:
                     logger.warning("Reconnect Failed for '%s'. Retrying in %.1fs...",
-                                   self._rtsp_url, self._reconnect_delay)
+                                   redact_rtsp_url(self._rtsp_url), self._reconnect_delay)
                     time.sleep(self._reconnect_delay)
                     continue
 
@@ -258,7 +259,7 @@ class RTSPSource(FrameSource):
 
                 if (now - self._last_read_time) > self._timeout_sec:
                     logger.error("RTSP Stream timeout (>%.1fs). Re-establishing connection...", self._timeout_sec)
-                    logger.info("RTSP Disconnected: %s", self._rtsp_url)
+                    logger.info("RTSP Disconnected: %s", redact_rtsp_url(self._rtsp_url))
                     with self._lock:
                         if self._cap:
                             self._cap.release()
