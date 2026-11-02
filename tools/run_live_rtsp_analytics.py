@@ -11,15 +11,17 @@ Usage::
 
 Or with custom parameters::
 
-    python -m camera_analytics.tools.run_live_rtsp_analytics --rtsp-url "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2" --log-file "camera_analytics/logs/my_events.jsonl"
+    python -m camera_analytics.tools.run_live_rtsp_analytics --rtsp-url "rtsp://<user>:<password>@<host>:554/<path>" --log-file "camera_analytics/logs/my_events.jsonl"
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +51,38 @@ from camera_analytics.utils.visualizer import PoseVisualizer
 logger = logging.getLogger("run_live_rtsp_analytics")
 
 
+def _resolve_rtsp_url(cli_value: Optional[str] = None) -> str:
+    if cli_value:
+        return cli_value
+    env_url = os.getenv("RTSP_URL")
+    if env_url:
+        return env_url
+    cam_url = os.getenv("CAMERA_RTSP_URL")
+    if cam_url:
+        return cam_url
+    raise SystemExit("no RTSP URL: pass --rtsp-url or set RTSP_URL (or CAMERA_RTSP_URL)")
+
+
+def _redact_rtsp(url: Optional[str]) -> str:
+    if not url or not isinstance(url, str):
+        return "<unparseable>"
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if not parsed.scheme or not parsed.netloc:
+            return "<unparseable>"
+        host_port = parsed.hostname or ""
+        if not host_port:
+            return "<unparseable>"
+        if parsed.port:
+            host_port = f"{host_port}:{parsed.port}"
+        path = parsed.path
+        if parsed.username is not None or parsed.password is not None:
+            return f"{parsed.scheme}://<redacted>@{host_port}{path}"
+        return f"{parsed.scheme}://{host_port}{path}"
+    except Exception:
+        return "<unparseable>"
+
+
 def setup_logging() -> None:
     """Configure clean console logging."""
     logging.basicConfig(
@@ -60,7 +94,7 @@ def setup_logging() -> None:
 
 
 def run_live_rtsp_analytics(
-    rtsp_url: str = "rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
+    rtsp_url: Optional[str] = None,
     weights_path: str = "yolo26m-pose.pt",
     log_file_path: str = "camera_analytics/logs/live_events.jsonl",
     output_video_path: Optional[str] = None,
@@ -80,11 +114,12 @@ def run_live_rtsp_analytics(
         show_preview: Whether to open interactive OpenCV preview window.
     """
     setup_logging()
+    rtsp_url = _resolve_rtsp_url(rtsp_url)
 
     logger.info("=" * 75)
     logger.info("Continuous Live RTSP Camera Analytics & Event Logger")
     logger.info("=" * 75)
-    logger.info("RTSP Stream URL: %s", rtsp_url)
+    logger.info("RTSP Stream URL: %s", _redact_rtsp(rtsp_url))
     logger.info("Event Log Output: %s", log_file_path)
     logger.info("Compute Device:  %s", device.upper())
     logger.info("Press Ctrl+C to stop processing cleanly.")
@@ -104,7 +139,7 @@ def run_live_rtsp_analytics(
     comm_manager.initialize({})
     comm_manager.start()
 
-    collector = BenchmarkCollector(camera_name=f"Live RTSP Camera ({rtsp_url})")
+    collector = BenchmarkCollector(camera_name=f"Live RTSP Camera ({_redact_rtsp(rtsp_url)})")
 
     # 2. Initialize AI Models
     detector = YOLOPoseAdapter(
@@ -381,8 +416,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rtsp-url",
         type=str,
-        default="rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
-        help="RTSP camera stream connection URL",
+        default=None,
+        help="RTSP camera stream connection URL (env: RTSP_URL, CAMERA_RTSP_URL)",
     )
     parser.add_argument(
         "--log-file",

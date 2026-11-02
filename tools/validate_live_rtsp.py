@@ -7,15 +7,17 @@ live performance overlays, and generates the Camera Validation Benchmark Report 
 
 Usage::
 
-    python -m camera_analytics.tools.validate_live_rtsp --rtsp-url "rtsp://username:password@ip:port/stream"
+    python -m camera_analytics.tools.validate_live_rtsp --rtsp-url "rtsp://<user>:<password>@<host>:554/<path>"
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +34,38 @@ from camera_analytics.utils.visualizer import PoseVisualizer
 logger = logging.getLogger("validate_live_rtsp")
 
 
+def _resolve_rtsp_url(cli_value: Optional[str] = None) -> str:
+    if cli_value:
+        return cli_value
+    env_url = os.getenv("RTSP_URL")
+    if env_url:
+        return env_url
+    cam_url = os.getenv("CAMERA_RTSP_URL")
+    if cam_url:
+        return cam_url
+    raise SystemExit("no RTSP URL: pass --rtsp-url or set RTSP_URL (or CAMERA_RTSP_URL)")
+
+
+def _redact_rtsp(url: Optional[str]) -> str:
+    if not url or not isinstance(url, str):
+        return "<unparseable>"
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if not parsed.scheme or not parsed.netloc:
+            return "<unparseable>"
+        host_port = parsed.hostname or ""
+        if not host_port:
+            return "<unparseable>"
+        if parsed.port:
+            host_port = f"{host_port}:{parsed.port}"
+        path = parsed.path
+        if parsed.username is not None or parsed.password is not None:
+            return f"{parsed.scheme}://<redacted>@{host_port}{path}"
+        return f"{parsed.scheme}://{host_port}{path}"
+    except Exception:
+        return "<unparseable>"
+
+
 def setup_logging() -> None:
     """Configure logging format."""
     logging.basicConfig(
@@ -43,7 +77,7 @@ def setup_logging() -> None:
 
 
 def validate_live_rtsp(
-    rtsp_url: str,
+    rtsp_url: Optional[str] = None,
     weights_path: str = "yolo26m-pose.pt",
     output_path: Optional[str] = "camera_analytics/samples/output_live_rtsp_validation.mp4",
     max_frames: Optional[int] = 300,
@@ -56,7 +90,7 @@ def validate_live_rtsp(
     """Run live RTSP performance validation loop and generate benchmark report.
 
     Args:
-        rtsp_url: RTSP connection URL (e.g. 'rtsp://user:pass@ip:port/stream').
+        rtsp_url: RTSP connection URL (e.g. 'rtsp://<user>:<password>@<host>:554/<path>').
         weights_path: Path to YOLO weights file (.pt).
         output_path: Optional output video path to record live validation.
         max_frames: Max frames to process (None for continuous long-run test).
@@ -67,13 +101,14 @@ def validate_live_rtsp(
         show_preview: Whether to display live preview window.
     """
     setup_logging()
+    rtsp_url = _resolve_rtsp_url(rtsp_url)
 
     logger.info("=" * 70)
     logger.info("Sprint 6C -- Live Camera Performance & Stability Validation")
     logger.info("=" * 70)
 
     # 1. Initialize Adapters & Benchmark Collector
-    collector = BenchmarkCollector(camera_name=f"RTSP Live Camera ({rtsp_url})")
+    collector = BenchmarkCollector(camera_name=f"RTSP Live Camera ({_redact_rtsp(rtsp_url)})")
 
     detector = YOLOPoseAdapter(
         confidence_threshold=confidence_threshold,
@@ -253,8 +288,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rtsp-url",
         type=str,
-        default="rtsp://admin:Admin1234@192.168.1.64/Streaming/channels/2",
-        help="RTSP camera stream URL or video file path for testing",
+        default=None,
+        help="RTSP camera stream URL (env: RTSP_URL, CAMERA_RTSP_URL)",
     )
     parser.add_argument("--max-frames", type=int, default=250, help="Maximum frames to run (None for long test)")
     parser.add_argument("--device", type=str, default="cuda", help="Compute device ('cuda' or 'cpu')")

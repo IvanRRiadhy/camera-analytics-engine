@@ -13,16 +13,28 @@ from datetime import datetime, timezone
 from camera_analytics.communication.publishers.rabbitmq_publisher import RabbitMQPublisher
 
 def main():
-    application_id = os.getenv("APPLICATION_ID", "e078ee93-90c4-4b95-9651-7bf82c8a6d33")
+    application_id = os.getenv("APPLICATION_ID")
+    rabbitmq_user = os.getenv("RABBITMQ_USER")
+    rabbitmq_pass = os.getenv("RABBITMQ_PASS")
+
+    missing = []
+    if not application_id:
+        missing.append("APPLICATION_ID")
+    if not rabbitmq_user:
+        missing.append("RABBITMQ_USER")
+    if not rabbitmq_pass:
+        missing.append("RABBITMQ_PASS")
+
+    if missing:
+        raise SystemExit(f"Missing required environment variable(s): {', '.join(missing)}")
+
     engine_id = os.getenv("ENGINE_ID", str(uuid.uuid4()))
     hostname = os.getenv("HOSTNAME", socket.gethostname())
     node_id = os.getenv("NODE_ID", str(uuid.uuid5(uuid.NAMESPACE_DNS, hostname)))
     ip_address = os.getenv("IP_ADDRESS", "127.0.0.1")
     rabbitmq_host = os.getenv("RABBITMQ_HOST", "localhost")
     rabbitmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
-    rabbitmq_vhost = os.getenv("RABBITMQ_VHOST", "cctv_vhost")
-    rabbitmq_user = os.getenv("RABBITMQ_USER", "cctv_admin")
-    rabbitmq_pass = os.getenv("RABBITMQ_PASS", "SecureCctvPass123")
+    rabbitmq_vhost = os.getenv("RABBITMQ_VHOST", "/")
 
     registration_payload = {
         "messageVersion": "1.0.0",
