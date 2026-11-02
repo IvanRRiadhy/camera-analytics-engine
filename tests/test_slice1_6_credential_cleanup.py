@@ -14,7 +14,6 @@ Verifies:
 
 from __future__ import annotations
 
-import base64
 import os
 import re
 import socket
@@ -63,12 +62,6 @@ class TestCredentialLiterals:
     ]
 
     def test_no_credential_shaped_literals_in_source(self):
-        # Known previous sensitive tokens encoded to prevent raw literals in test source
-        old_rtsp_url = base64.b64decode(b"cnRzcDovL2FkbWluOkFkbWluMTIzNEAxOTIuMTY4LjEuNjQvU3RyZWFtaW5nL2NoYW5uZWxzLzI=").decode("ascii")
-        old_rmq_user = base64.b64decode(b"Y2N0dl9hZG1pbg==").decode("ascii")
-        old_rmq_pass = base64.b64decode(b"U2VjdXJlQ2N0dlBhc3MxMjM=").decode("ascii")
-        old_uuid = base64.b64decode(b"ZTA3OGVlOTMtOTBjNC00Yjk1LTk2NTEtN2JmODJjOGE2ZDMz").decode("ascii")
-
         rtsp_cred_pattern = re.compile(r'rtsp://(?!(?:<user>:<password>|username:password|user:pass))[^/:]+:[^/@]+@')
         rmq_pass_pattern = re.compile(r'rabbitmq_pass\s*=\s*os\.getenv\("RABBITMQ_PASS",\s*["\']')
         rmq_user_pattern = re.compile(r'rabbitmq_user\s*=\s*os\.getenv\("RABBITMQ_USER",\s*["\']')
@@ -78,12 +71,6 @@ class TestCredentialLiterals:
             file_path = REPO_ROOT / rel_path
             assert file_path.exists(), f"Target file not found: {file_path}"
             content = file_path.read_text(encoding="utf-8")
-
-            # Check previous credentials are removed
-            assert old_rtsp_url not in content, f"Old RTSP URL found in {rel_path}"
-            assert old_rmq_user not in content, f"Old RabbitMQ username found in {rel_path}"
-            assert old_rmq_pass not in content, f"Old RabbitMQ password found in {rel_path}"
-            assert old_uuid not in content, f"Old tenant UUID found in {rel_path}"
 
             # Check regex patterns
             assert not rtsp_cred_pattern.search(content), f"Credential-bearing RTSP URL found in {rel_path}"

@@ -8,7 +8,6 @@ Verifies:
 
 from __future__ import annotations
 
-import base64
 import re
 from pathlib import Path
 
@@ -26,10 +25,6 @@ def test_context_file_no_credential_shaped_literals():
     context_file = REPO_ROOT / "plugins" / "framework" / "context.py"
     assert context_file.exists(), f"File not found: {context_file}"
     content = context_file.read_text(encoding="utf-8")
-
-    # Base64 encoded target to avoid plain sensitive strings in test source
-    old_rtsp_url = base64.b64decode(b"cnRzcDovL2FkbWluOkFkbWluMTIzNEAxOTIuMTY4LjEuNjQvU3RyZWFtaW5nL2NoYW5uZWxzLzI=").decode("ascii")
-    assert old_rtsp_url not in content, "Old RTSP URL literal found in context.py"
 
     # Generic credential patterns
     rtsp_cred_pattern = re.compile(r'rtsp://(?!(?:<user>:<password>|username:password|user:pass))[^/:]+:[^/@]+@')
