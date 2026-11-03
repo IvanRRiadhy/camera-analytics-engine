@@ -35,12 +35,35 @@ class ReaderWorker:
         event_hooks: Optional[IngestionEventHooks] = None,
         max_reconnect_attempts: int = 5,
         metrics_accumulator: Optional[Any] = None,
+        overflow_policy: str = "auto",
+        config: Optional[Any] = None,
     ) -> None:
         self._pipeline_id = pipeline_id
         self._camera_id = camera_id
         self._reader = reader
+
+        # Resolve overflow policy from explicit argument, config object, or auto-detection
+        resolved_policy_setting = overflow_policy
+        if config is not None:
+            cfg_ing = getattr(config, "ingestion", None)
+            if cfg_ing is not None:
+                resolved_policy_setting = getattr(cfg_ing, "overflow_policy", resolved_policy_setting)
+            elif isinstance(config, dict):
+                ing_dict = config.get("ingestion", {})
+                if isinstance(ing_dict, dict) and "overflow_policy" in ing_dict:
+                    resolved_policy_setting = ing_dict["overflow_policy"]
+
+        if resolved_policy_setting == "auto":
+            is_rtsp = self._is_rtsp_source(getattr(reader, "source", None))
+            effective_policy = "drop_oldest" if is_rtsp else "drop_newest"
+        elif resolved_policy_setting in ("drop_oldest", "drop_newest"):
+            effective_policy = resolved_policy_setting
+        else:
+            effective_policy = "drop_newest"
+
+        self._overflow_policy = effective_policy
         self._buffer = FrameBuffer(capacity=buffer_capacity)
-        self._queue = FrameQueue(capacity=queue_capacity)
+        self._queue = FrameQueue(capacity=queue_capacity, overflow=effective_policy)
         self._hooks = event_hooks or IngestionEventHooks()
         self._metrics = IngestionMetrics()
         self._max_reconnect_attempts = max_reconnect_attempts
@@ -57,6 +80,26 @@ class ReaderWorker:
         self._pause_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+
+    @staticmethod
+    def _is_rtsp_source(source: Any) -> bool:
+        """Detect whether a video source is an RTSP network stream."""
+        if source is None:
+            return False
+        cls_name = getattr(source, "__class__", type(source)).__name__.lower()
+        if "rtsp" in cls_name:
+            return True
+        uri = str(getattr(source, "uri", "") or getattr(source, "_uri", "") or "").lower()
+        if uri.startswith("rtsp://") or uri.startswith("rtsps://"):
+            return True
+        src_type = str(getattr(source, "source_type", "") or getattr(source, "_source_type", "")).lower()
+        if "rtsp" in src_type:
+            return True
+        return False
+
+    @property
+    def overflow_policy(self) -> str:
+        return self._overflow_policy
 
     @property
     def pipeline_id(self) -> str:
@@ -180,11 +223,17 @@ class ReaderWorker:
             if not pushed_clean:
                 self._hooks.trigger_buffer_overflow(self._pipeline_id)
 
-            # Enqueue in FrameQueue for AI Consumer
-            enqueued = self._queue.put(frame, timeout=0.01)
+            # Enqueue in FrameQueue for AI Consumer (non-blocking put for drop_oldest / RTSP)
+            timeout_val = 0.0 if self._queue.overflow == "drop_oldest" else 0.01
+            prev_drops = self._queue.drop_count
+            enqueued = self._queue.put(frame, timeout=timeout_val)
             if not enqueued:
                 with self._lock:
                     self._metrics.frame_drop_count += 1
+                self._hooks.trigger_queue_full(self._pipeline_id)
+            elif self._queue.drop_count > prev_drops:
+                with self._lock:
+                    self._metrics.frame_drop_count = self._queue.drop_count
                 self._hooks.trigger_queue_full(self._pipeline_id)
 
             self._hooks.trigger_frame_produced(frame)

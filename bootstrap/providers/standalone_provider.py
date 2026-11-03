@@ -29,6 +29,7 @@ from camera_analytics.config.schema import (
     AppConfig,
     CameraConfig,
     DetectorConfig,
+    IngestionConfig,
     RunnerConfig,
     SourceConfig,
     TrackerConfig,
@@ -326,6 +327,15 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                 source_params["tcp_precheck_timeout_sec"] = float(cam_data["tcp_precheck_timeout_sec"])
 
             # Construct Pipeline Configuration for this Camera
+            ingestion_dict = cam_data.get("ingestion") if isinstance(cam_data.get("ingestion"), dict) else (
+                raw_data.get("ingestion") if isinstance(raw_data.get("ingestion"), dict) else {}
+            )
+            ingestion_cfg = IngestionConfig(
+                overflow_policy=str(ingestion_dict.get("overflow_policy", "auto")).lower(),
+                queue_capacity=int(ingestion_dict.get("queue_capacity", 30)),
+                buffer_capacity=int(ingestion_dict.get("buffer_capacity", 30)),
+            )
+
             app_cfg = AppConfig(
                 camera=CameraConfig(
                     camera_id=cam_id,
@@ -342,6 +352,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                     module_settings=cam_module_settings,
                 ),
                 runner=RunnerConfig(),
+                ingestion=ingestion_cfg,
             )
 
             pipe_cfg = PipelineConfiguration(

@@ -302,20 +302,27 @@ def main(max_run_sec: Optional[float] = None) -> int:
         video_source = create_video_source(camera.source, params=src_params)
         video_reader = VideoReader(source=video_source)
 
+        ing_cfg = getattr(getattr(pipe_inst.config, "app", None), "ingestion", None)
+        overflow_policy = getattr(ing_cfg, "overflow_policy", "auto") if ing_cfg is not None else "auto"
+        queue_cap = getattr(ing_cfg, "queue_capacity", 30) if ing_cfg is not None else 30
+        buffer_cap = getattr(ing_cfg, "buffer_capacity", 30) if ing_cfg is not None else 30
+
         # Create isolated PipelineMetricsAccumulator per pipeline
         acc = metrics_registry.create_pipeline(
             pipeline_id=pipe_inst.pipeline_id,
             camera_id=pipe_inst.camera_id,
             camera_name=camera.name,
-            queue_capacity=30,
+            queue_capacity=queue_cap,
         )
 
         r_worker = ReaderWorker(
             pipeline_id=pipe_inst.pipeline_id,
             camera_id=pipe_inst.camera_id,
             reader=video_reader,
-            queue_capacity=30,
+            buffer_capacity=buffer_cap,
+            queue_capacity=queue_cap,
             metrics_accumulator=acc,
+            overflow_policy=overflow_policy,
         )
 
         mod_settings = dict(analytics_cfg.module_settings) if analytics_cfg and analytics_cfg.module_settings else {}

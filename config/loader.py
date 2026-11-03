@@ -16,6 +16,7 @@ from camera_analytics.config.schema import (
     AppConfig,
     CameraConfig,
     DetectorConfig,
+    IngestionConfig,
     RunnerConfig,
     SourceConfig,
     TrackerConfig,
@@ -73,6 +74,7 @@ class ConfigLoader:
         tracker_cfg = cls._load_tracker(data.get("tracker", {}))
         runner_cfg = cls._load_runner(data.get("runner", {}))
         analytics_cfg = cls._load_analytics(data.get("analytics", {}))
+        ingestion_cfg = cls._load_ingestion(data.get("ingestion", {}))
 
         return AppConfig(
             camera=camera_cfg,
@@ -81,6 +83,7 @@ class ConfigLoader:
             tracker=tracker_cfg,
             runner=runner_cfg,
             analytics=analytics_cfg,
+            ingestion=ingestion_cfg,
         )
 
     @classmethod
@@ -254,4 +257,30 @@ class ConfigLoader:
         return AnalyticsConfig(
             enabled_modules=enabled_modules,
             module_settings=module_settings,
+        )
+
+    @classmethod
+    def _load_ingestion(cls, data: dict[str, Any]) -> IngestionConfig:
+        """Validate and construct IngestionConfig."""
+        if not isinstance(data, dict):
+            raise ConfigValidationError("'ingestion' configuration section must be a dictionary.")
+
+        overflow_policy = str(data.get("overflow_policy", "auto")).lower()
+        if overflow_policy not in ("auto", "drop_oldest", "drop_newest"):
+            raise ConfigValidationError(
+                f"Invalid 'ingestion.overflow_policy': '{overflow_policy}'. Must be 'auto', 'drop_oldest', or 'drop_newest'."
+            )
+
+        queue_capacity = int(data.get("queue_capacity", 30))
+        if queue_capacity < 1:
+            raise ConfigValidationError("'ingestion.queue_capacity' must be at least 1.")
+
+        buffer_capacity = int(data.get("buffer_capacity", 30))
+        if buffer_capacity < 1:
+            raise ConfigValidationError("'ingestion.buffer_capacity' must be at least 1.")
+
+        return IngestionConfig(
+            overflow_policy=overflow_policy,
+            queue_capacity=queue_capacity,
+            buffer_capacity=buffer_capacity,
         )

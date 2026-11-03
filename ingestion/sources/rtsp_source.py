@@ -85,6 +85,10 @@ class RTSPSource(VideoSource):
                 ],
             )
             if self._cap.isOpened():
+                try:
+                    self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                except Exception as b_exc:
+                    logger.debug("RTSPSource: Failed to set CAP_PROP_BUFFERSIZE: %s", b_exc)
                 self._is_open = True
                 logger.info("RTSPSource: Successfully connected to RTSP stream '%s'", self._uri)
                 return True

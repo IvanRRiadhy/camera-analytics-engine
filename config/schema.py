@@ -16,9 +16,10 @@ Defines strongly-typed, immutable dataclass schemas for each subsystem:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from camera_analytics.models.zone import Zone
+if TYPE_CHECKING:
+    from camera_analytics.models.zone import Zone
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +150,21 @@ class SerializationConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class IngestionConfig:
+    """Configuration for stream ingestion and frame queue transport.
+
+    Attributes:
+        overflow_policy: Policy when frame queue is full ('auto', 'drop_oldest', 'drop_newest').
+        queue_capacity: Transport queue capacity bound.
+        buffer_capacity: Ring buffer cache capacity bound.
+    """
+
+    overflow_policy: str = "auto"
+    queue_capacity: int = 30
+    buffer_capacity: int = 30
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """Root configuration combining all subsystem configurations.
 
@@ -161,6 +177,7 @@ class AppConfig:
         analytics: Analytics modules configuration.
         logging: Enterprise logging detail level configuration.
         serialization: Field inclusion configuration.
+        ingestion: Frame ingestion and queue transport configuration.
     """
 
     camera: CameraConfig
@@ -171,3 +188,4 @@ class AppConfig:
     analytics: AnalyticsConfig
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     serialization: SerializationConfig = field(default_factory=SerializationConfig)
+    ingestion: IngestionConfig = field(default_factory=IngestionConfig)
