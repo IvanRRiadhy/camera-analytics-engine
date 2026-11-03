@@ -67,6 +67,7 @@ class FaceMatchConfig:
     detect_scale: float = 1.0
     score_threshold: float = 0.60  # YuNet face detection confidence threshold (PLACEHOLDER)
     lock_timeout_s: float = 0.05   # Shared inference lock acquisition timeout
+    async_inference: bool = False  # Whether to run face inference on a dedicated background thread
 
     # Gate Thresholds (PLACEHOLDERS)
     min_face_px: int = 64          # Minimum face bounding box width in pixels
@@ -134,6 +135,8 @@ class FaceMatchConfig:
             cfg.debug_scores = bool(data["debug_scores"])
         if "lock_timeout_s" in data:
             cfg.lock_timeout_s = float(data["lock_timeout_s"])
+        if "async_inference" in data:
+            cfg.async_inference = bool(data["async_inference"])
 
         return cfg
 
