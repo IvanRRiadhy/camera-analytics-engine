@@ -423,15 +423,31 @@ def main(max_run_sec: Optional[float] = None) -> int:
                 all_workers_failed = True
                 break
             if viewer_provider is not None:
-                # Render live view for each camera pipeline via FramePresentationBuilder
+                # Render live view for each camera pipeline
                 for i, pipe_inst in enumerate(pipelines):
                     r_worker = reader_workers[i]
                     e_worker = execution_workers[i]
 
-                    # Retrieve latest completed FramePresentation View Model from AI Execution Worker
-                    presentation = e_worker.presentation_buffer.get_latest()
-                    if presentation is not None:
-                        viewer_provider.render_presentation(presentation)
+                    v_cfg = getattr(getattr(pipe_inst.config, "app", None), "viewer", None)
+                    decoupled = getattr(v_cfg, "decoupled_display", False) if v_cfg is not None else False
+                    max_age_ms = getattr(v_cfg, "overlay_max_age_ms", 500.0) if v_cfg is not None else 500.0
+
+                    if decoupled:
+                        # Decoupled display: newest raw frame from ReaderWorker's FrameBuffer
+                        raw_frame = r_worker.buffer.get_latest()
+                        if raw_frame is not None:
+                            latest_overlay = e_worker.overlay_store.get_latest(pipe_inst.pipeline_id)
+                            viewer_provider.render_decoupled(
+                                camera_name=pipe_inst.camera.name,
+                                raw_frame=raw_frame,
+                                overlay=latest_overlay,
+                                max_age_ms=max_age_ms,
+                            )
+                    else:
+                        # Coupled display: latest completed FramePresentation from AI Execution Worker
+                        presentation = e_worker.presentation_buffer.get_latest()
+                        if presentation is not None:
+                            viewer_provider.render_presentation(presentation)
 
                 # Update & Render AI Engine Development Studio Window via StudioLauncher
                 if studio_launcher.enabled:

@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import cv2
 import numpy as np
 
 from camera_analytics.logging import RuntimeLogger
-from camera_analytics.viewer.models import FramePresentation
+from camera_analytics.viewer.models import FramePresentation, OverlayData
 
 logger = logging.getLogger(__name__)
 
@@ -79,25 +79,52 @@ class OverlayRenderer:
         from camera_analytics.viewer.overlay_provider import RuntimeOverlayProvider
         self.overlay_provider = overlay_provider or RuntimeOverlayProvider()
 
-    def render(self, presentation: FramePresentation) -> np.ndarray:
-        """Render complete presentation overlay on image copy.
+    def render(
+        self,
+        presentation_or_frame: Union[FramePresentation, np.ndarray],
+        overlay: Optional[Union[OverlayData, FramePresentation]] = None,
+        *,
+        is_stale: bool = False,
+        stale_age_ms: float = 0.0,
+        max_age_ms: float = 500.0,
+        camera_name: str = "",
+    ) -> np.ndarray:
+        """Render presentation overlay on image copy.
+
+        Supports both coupled rendering via FramePresentation and decoupled
+        rendering passing (frame, overlay) separately.
 
         Args:
-            presentation: FramePresentation view model.
+            presentation_or_frame: Either a FramePresentation instance (coupled path)
+                                   or a raw frame NumPy BGR image array (decoupled path).
+            overlay: Optional OverlayData or FramePresentation containing visual models.
+            is_stale: Whether the overlay exceeds the maximum allowed age.
+            stale_age_ms: Age of the overlay in milliseconds.
+            max_age_ms: Maximum allowable age in milliseconds before boxes are suppressed.
+            camera_name: Camera display name for HUD when decoupled.
 
         Returns:
             Rendered NumPy BGR image array.
         """
-        canvas = presentation.image.copy()
+        if isinstance(presentation_or_frame, FramePresentation):
+            canvas = presentation_or_frame.image.copy()
+            overlay_obj = overlay or presentation_or_frame
+            draw_boxes_allowed = not is_stale
+            cam_disp_name = presentation_or_frame.camera_name or camera_name
+        else:
+            canvas = presentation_or_frame.copy()
+            overlay_obj = overlay
+            draw_boxes_allowed = (overlay_obj is not None) and (not is_stale)
+            cam_disp_name = camera_name or (getattr(overlay_obj, "camera_name", "") if overlay_obj else "")
 
         # 1. Render Zones & Spatial Snapshots via SpatialVisualizer
-        if self.options.draw_zones:
-            if hasattr(presentation, "spatial_snapshot") and presentation.spatial_snapshot is not None:
+        if self.options.draw_zones and overlay_obj is not None:
+            if hasattr(overlay_obj, "spatial_snapshot") and overlay_obj.spatial_snapshot is not None:
                 from camera_analytics.core.spatial.visualizer import SpatialVisualizer
                 visualizer = SpatialVisualizer()
-                canvas = visualizer.render_snapshot(canvas, presentation.spatial_snapshot)
-            elif presentation.zones:
-                for zone in presentation.zones:
+                canvas = visualizer.render_snapshot(canvas, overlay_obj.spatial_snapshot)
+            elif hasattr(overlay_obj, "zones") and overlay_obj.zones:
+                for zone in overlay_obj.zones:
                     if len(zone.points) >= 3:
                         pts = np.array([[p.x, p.y] for p in zone.points], np.int32)
                         pts = pts.reshape((-1, 1, 2))
@@ -106,9 +133,9 @@ class OverlayRenderer:
                         cv2.polylines(canvas, [pts], isClosed=True, color=zone.color_rgb, thickness=2)
                         
                         # Fill semi-transparent polygon
-                        overlay = canvas.copy()
-                        cv2.fillPoly(overlay, [pts], color=zone.color_rgb)
-                        cv2.addWeighted(overlay, 0.25, canvas, 0.75, 0, canvas)
+                        overlay_layer = canvas.copy()
+                        cv2.fillPoly(overlay_layer, [pts], color=zone.color_rgb)
+                        cv2.addWeighted(overlay_layer, 0.25, canvas, 0.75, 0, canvas)
 
                         # Draw Zone Name & Occupancy Label Header
                         label_pos = (zone.points[0].x, max(25, zone.points[0].y - 10))
@@ -123,24 +150,24 @@ class OverlayRenderer:
                         )
 
         # 2. Render Track History Trails
-        if self.options.draw_track_history and presentation.tracks:
-            for trk in presentation.tracks:
+        if draw_boxes_allowed and self.options.draw_track_history and overlay_obj is not None and hasattr(overlay_obj, "tracks") and overlay_obj.tracks:
+            for trk in overlay_obj.tracks:
                 if len(trk.history) >= 2:
                     h_pts = np.array([[p.x, p.y] for p in trk.history], np.int32)
                     h_pts = h_pts.reshape((-1, 1, 2))
                     cv2.polylines(canvas, [h_pts], isClosed=False, color=(255, 200, 0), thickness=2)
 
         # 3. Render Ground Points
-        if self.options.draw_ground_point and presentation.skeletons:
-            for skel in presentation.skeletons:
+        if draw_boxes_allowed and self.options.draw_ground_point and overlay_obj is not None and hasattr(overlay_obj, "skeletons") and overlay_obj.skeletons:
+            for skel in overlay_obj.skeletons:
                 if skel.ground_point is not None:
                     gp = skel.ground_point
                     cv2.circle(canvas, (gp.x, gp.y), radius=6, color=(0, 0, 255), thickness=-1)
                     cv2.circle(canvas, (gp.x, gp.y), radius=8, color=(255, 255, 255), thickness=1)
 
         # 4. Render 17-Point COCO Pose Skeletons
-        if self.options.draw_skeleton and presentation.skeletons:
-            for skel in presentation.skeletons:
+        if draw_boxes_allowed and self.options.draw_skeleton and overlay_obj is not None and hasattr(overlay_obj, "skeletons") and overlay_obj.skeletons:
+            for skel in overlay_obj.skeletons:
                 kps = skel.keypoints
                 if len(kps) >= 17:
                     # Draw connecting bone lines
@@ -156,8 +183,8 @@ class OverlayRenderer:
                             cv2.circle(canvas, (kp.x, kp.y), radius=3, color=(0, 255, 255), thickness=-1)
 
         # 5. Render Bounding Boxes & Track Header Labels
-        if self.options.draw_bbox and presentation.boxes:
-            for box in presentation.boxes:
+        if draw_boxes_allowed and self.options.draw_bbox and overlay_obj is not None and hasattr(overlay_obj, "boxes") and overlay_obj.boxes:
+            for box in overlay_obj.boxes:
                 # Bounding Box Rectangle
                 cv2.rectangle(
                     canvas,
@@ -172,8 +199,8 @@ class OverlayRenderer:
                     lines = [box.label]
 
                     # Read HumanStatePresenter View Model if available on presentation or context
-                    if hasattr(presentation, "human_view_models") and presentation.human_view_models:
-                        for vm in presentation.human_view_models:
+                    if hasattr(overlay_obj, "human_view_models") and overlay_obj.human_view_models:
+                        for vm in overlay_obj.human_view_models:
                             if vm.track_id == box.track_id:
                                 lines = [
                                     f"Track #{vm.track_id} | {vm.gender.capitalize()} ({vm.gender_confidence:.0%}) | {vm.ema_age:.1f}y",
@@ -222,8 +249,8 @@ class OverlayRenderer:
 
         # 5c. Render Face Matching Overlays
         show_faces = getattr(self.options, "show_faces", True) and getattr(self.options, "draw_faces", True)
-        if show_faces and hasattr(presentation, "face_boxes") and presentation.face_boxes:
-            for f_box in presentation.face_boxes:
+        if draw_boxes_allowed and show_faces and overlay_obj is not None and hasattr(overlay_obj, "face_boxes") and overlay_obj.face_boxes:
+            for f_box in overlay_obj.face_boxes:
                 is_identified = (f_box.state == "identified")
                 color = (0, 255, 0) if is_identified else (128, 128, 128)
                 thick = 2 if is_identified else 1
@@ -279,8 +306,8 @@ class OverlayRenderer:
                 )
 
         # 5b. Render Vehicle License Plate Overlays
-        if getattr(self.options, "draw_plates", True) and hasattr(presentation, "plate_boxes") and presentation.plate_boxes:
-            for p_box in presentation.plate_boxes:
+        if draw_boxes_allowed and getattr(self.options, "draw_plates", True) and overlay_obj is not None and hasattr(overlay_obj, "plate_boxes") and overlay_obj.plate_boxes:
+            for p_box in overlay_obj.plate_boxes:
                 # 1. Bounding Box Rectangle (High-visibility Gold/Amber (0, 215, 255) in BGR)
                 plate_color = getattr(p_box, "color_rgb", (0, 215, 255))
                 cv2.rectangle(
@@ -363,59 +390,77 @@ class OverlayRenderer:
                     )
 
         # 6. Render HUD Runtime Metrics with Semi-Transparent Background Box
-        if self.options.draw_metrics and presentation.metrics:
-            m = presentation.metrics
-            lines = [
-                f"CAMERA: {m.camera_name} ({m.camera_id}) | GPU:{m.gpu_id}",
-                f"FPS In: {m.fps_input:.1f} | Latency: {m.read_latency_ms:.1f}ms + {m.pipeline_latency_ms:.1f}ms",
-                f"Queue Size: {m.queue_size} | Active Tracks: {m.active_tracks_count} | Zones: {m.active_zones_count}",
-            ]
+        if self.options.draw_metrics:
+            m = getattr(overlay_obj, "metrics", None) if overlay_obj is not None else None
+            lines: list[str] = []
+            if m is not None:
+                lines = [
+                    f"CAMERA: {m.camera_name} ({m.camera_id}) | GPU:{m.gpu_id}",
+                    f"FPS In: {m.fps_input:.1f} | Latency: {m.read_latency_ms:.1f}ms + {m.pipeline_latency_ms:.1f}ms",
+                    f"Queue Size: {m.queue_size} | Active Tracks: {m.active_tracks_count} | Zones: {m.active_zones_count}",
+                ]
+            elif cam_disp_name:
+                lines = [f"CAMERA: {cam_disp_name}"]
 
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.55
-            thickness = 2
-            line_height = 24
-            padding = 10
+            if is_stale:
+                lines.append(f"OVERLAY: STALE ({stale_age_ms:.0f}ms > {max_age_ms:.0f}ms) - BOXES SUPPRESSED")
+            elif overlay_obj is None:
+                lines.append("OVERLAY: WAITING FOR INFERENCE - BOXES SUPPRESSED")
+            elif stale_age_ms > 0:
+                lines.append(f"OVERLAY: FRESH ({stale_age_ms:.0f}ms)")
 
-            # Calculate box dimensions for text block
-            max_w = 0
-            for line in lines:
-                (tw, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
-                if tw > max_w:
-                    max_w = tw
+            if lines:
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.55
+                thickness = 2
+                line_height = 24
+                padding = 10
 
-            box_x1 = 12
-            box_y1 = 10
-            box_x2 = box_x1 + max_w + (padding * 2)
-            box_y2 = box_y1 + (len(lines) * line_height) + padding
+                # Calculate box dimensions for text block
+                max_w = 0
+                for line in lines:
+                    (tw, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
+                    if tw > max_w:
+                        max_w = tw
 
-            # Draw semi-transparent dark grey background box
-            h_c, w_c = canvas.shape[:2]
-            box_x2 = min(w_c - 5, box_x2)
-            box_y2 = min(h_c - 5, box_y2)
+                box_x1 = 12
+                box_y1 = 10
+                box_x2 = box_x1 + max_w + (padding * 2)
+                box_y2 = box_y1 + (len(lines) * line_height) + padding
 
-            overlay = canvas.copy()
-            cv2.rectangle(overlay, (box_x1, box_y1), (box_x2, box_y2), (30, 30, 30), -1)
-            cv2.addWeighted(overlay, 0.65, canvas, 0.35, 0, canvas)
-            cv2.rectangle(canvas, (box_x1, box_y1), (box_x2, box_y2), (80, 80, 80), 1)
+                # Draw semi-transparent dark grey background box
+                h_c, w_c = canvas.shape[:2]
+                box_x2 = min(w_c - 5, box_x2)
+                box_y2 = min(h_c - 5, box_y2)
 
-            # Render yellow text over the background box
-            y0 = box_y1 + padding + 15
-            for line in lines:
-                cv2.putText(
-                    canvas,
-                    line,
-                    (box_x1 + padding, y0),
-                    font,
-                    font_scale,
-                    (0, 255, 255),
-                    cv2.LINE_AA,
-                )
-                y0 += line_height
+                overlay_layer = canvas.copy()
+                cv2.rectangle(overlay_layer, (box_x1, box_y1), (box_x2, box_y2), (30, 30, 30), -1)
+                cv2.addWeighted(overlay_layer, 0.65, canvas, 0.35, 0, canvas)
+                cv2.rectangle(canvas, (box_x1, box_y1), (box_x2, box_y2), (80, 80, 80), 1)
+
+                # Render yellow text over the background box
+                y0 = box_y1 + padding + 15
+                for line in lines:
+                    text_color = (0, 0, 255) if "STALE" in line else ((0, 255, 255) if "FRESH" in line else (0, 255, 255))
+                    cv2.putText(
+                        canvas,
+                        line,
+                        (box_x1 + padding, y0),
+                        font,
+                        font_scale,
+                        text_color,
+                        cv2.LINE_AA,
+                    )
+                    y0 += line_height
 
         # 7. Render Standalone AI Runtime Debug Panel (Multi-Track Multi-Module / HumanState Telemetry)
         if self.options.draw_debug_panel:
-            cam_id = getattr(presentation.metrics, "camera_id", "default_camera") if presentation.metrics else "default_camera"
+            cam_id = (
+                getattr(getattr(overlay_obj, "metrics", None), "camera_id", None)
+                or getattr(overlay_obj, "camera_id", None)
+                or cam_disp_name
+                or "default_camera"
+            )
             all_debug = self.overlay_provider.get_all_camera_debug_info(cam_id)
             if all_debug:
                 panel_lines = ["--- HUMAN TEMPORAL INTELLIGENCE PANEL ---"]
@@ -452,5 +497,7 @@ class OverlayRenderer:
                     color = (0, 255, 200) if pline.startswith("---") else ((255, 255, 255) if pline.startswith("[") else (200, 200, 200))
                     cv2.putText(canvas, pline, (p_x1 + 8, py), cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA)
                     py += 18
+
+        return canvas
 
         return canvas

@@ -6,6 +6,7 @@ from camera_analytics.viewer.buffer import PresentationFrameBuffer
 from camera_analytics.viewer.builder import FramePresentationBuilder
 from camera_analytics.viewer.models import (
     FramePresentation,
+    OverlayData,
     PresentedBox,
     PresentedEvent,
     PresentedMetrics,
@@ -14,6 +15,7 @@ from camera_analytics.viewer.models import (
     PresentedTrack,
     PresentedZone,
 )
+from camera_analytics.viewer.overlay_store import OverlayStore
 from camera_analytics.viewer.renderer import OverlayRenderer, RenderOptions
 from camera_analytics.viewer.viewer_provider import ViewerProvider
 from camera_analytics.viewer.window_manager import WindowManager
@@ -27,6 +29,8 @@ __all__ = [
     "PresentedEvent",
     "PresentedMetrics",
     "FramePresentation",
+    "OverlayData",
+    "OverlayStore",
     "FramePresentationBuilder",
     "PresentationFrameBuffer",
     "RenderOptions",

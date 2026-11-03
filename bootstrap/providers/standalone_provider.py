@@ -33,6 +33,7 @@ from camera_analytics.config.schema import (
     RunnerConfig,
     SourceConfig,
     TrackerConfig,
+    ViewerConfig,
 )
 from camera_analytics.config.validator import StandaloneConfigValidator
 from camera_analytics.models.camera import Camera, CameraStatus
@@ -336,6 +337,16 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                 buffer_capacity=int(ingestion_dict.get("buffer_capacity", 30)),
             )
 
+            viewer_dict = cam_data.get("viewer") if isinstance(cam_data.get("viewer"), dict) else (
+                raw_data.get("viewer") if isinstance(raw_data.get("viewer"), dict) else (
+                    raw_data.get("runtime", {}).get("viewer") if isinstance(raw_data.get("runtime", {}).get("viewer"), dict) else {}
+                )
+            )
+            viewer_cfg = ViewerConfig(
+                decoupled_display=bool(viewer_dict.get("decoupled_display", False)),
+                overlay_max_age_ms=float(viewer_dict.get("overlay_max_age_ms", 500.0)),
+            )
+
             app_cfg = AppConfig(
                 camera=CameraConfig(
                     camera_id=cam_id,
@@ -353,6 +364,7 @@ class StandaloneConfigurationProvider(ConfigurationProvider):
                 ),
                 runner=RunnerConfig(),
                 ingestion=ingestion_cfg,
+                viewer=viewer_cfg,
             )
 
             pipe_cfg = PipelineConfiguration(

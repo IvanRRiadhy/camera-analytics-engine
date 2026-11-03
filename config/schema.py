@@ -165,6 +165,19 @@ class IngestionConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ViewerConfig:
+    """Configuration for viewer presentation and decoupling.
+
+    Attributes:
+        decoupled_display: Whether to decouple display rendering from inference.
+        overlay_max_age_ms: Maximum age in ms of overlay before suppressing stale boxes.
+    """
+
+    decoupled_display: bool = False
+    overlay_max_age_ms: float = 500.0
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """Root configuration combining all subsystem configurations.
 
@@ -178,6 +191,7 @@ class AppConfig:
         logging: Enterprise logging detail level configuration.
         serialization: Field inclusion configuration.
         ingestion: Frame ingestion and queue transport configuration.
+        viewer: Viewer presentation and display decoupling configuration.
     """
 
     camera: CameraConfig
@@ -189,3 +203,4 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     serialization: SerializationConfig = field(default_factory=SerializationConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
+    viewer: ViewerConfig = field(default_factory=ViewerConfig)

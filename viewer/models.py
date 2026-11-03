@@ -7,6 +7,7 @@ PresentedTrack, PresentedZone, PresentedEvent, PresentedMetrics) separating AI d
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -150,3 +151,46 @@ class FramePresentation:
     human_view_models: tuple[Any, ...] = ()
     plate_boxes: tuple[PresentedPlateBox, ...] = ()
     face_boxes: tuple[PresentedFaceBox, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OverlayData:
+    """Thread-safe, lightweight visual overlay view model without the raw image array."""
+
+    camera_id: str
+    camera_name: str
+    frame_number: int
+    timestamp: float
+    boxes: tuple[PresentedBox, ...] = ()
+    skeletons: tuple[PresentedSkeleton, ...] = ()
+    tracks: tuple[PresentedTrack, ...] = ()
+    zones: tuple[PresentedZone, ...] = ()
+    events: tuple[PresentedEvent, ...] = ()
+    metrics: Optional[PresentedMetrics] = None
+    spatial_snapshot: Any = None
+    human_view_models: tuple[Any, ...] = ()
+    plate_boxes: tuple[PresentedPlateBox, ...] = ()
+    face_boxes: tuple[PresentedFaceBox, ...] = ()
+    created_at: float = 0.0
+
+    @classmethod
+    def from_presentation(cls, pres: FramePresentation, created_at: Optional[float] = None) -> OverlayData:
+        """Create OverlayData from a FramePresentation instance, omitting the image array."""
+        return cls(
+            camera_id=pres.camera_id,
+            camera_name=pres.camera_name,
+            frame_number=pres.frame_number,
+            timestamp=pres.timestamp,
+            boxes=pres.boxes,
+            skeletons=pres.skeletons,
+            tracks=pres.tracks,
+            zones=pres.zones,
+            events=pres.events,
+            metrics=pres.metrics,
+            spatial_snapshot=pres.spatial_snapshot,
+            human_view_models=pres.human_view_models,
+            plate_boxes=pres.plate_boxes,
+            face_boxes=pres.face_boxes,
+            created_at=time.time() if created_at is None else created_at,
+        )
+

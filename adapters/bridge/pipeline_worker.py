@@ -19,6 +19,8 @@ from camera_analytics.models.camera import Camera
 from camera_analytics.orchestration.states import PipelineState
 from camera_analytics.viewer.buffer import PresentationFrameBuffer
 from camera_analytics.viewer.builder import FramePresentationBuilder
+from camera_analytics.viewer.models import OverlayData
+from camera_analytics.viewer.overlay_store import OverlayStore
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ class PipelineExecutionWorker:
         fail_after_s: float = DEFAULT_FAIL_AFTER_S,
         clock: Optional[Callable[[], float]] = None,
         max_consecutive_failures: Optional[int] = None,
+        overlay_store: Optional[OverlayStore] = None,
     ) -> None:
         self._pipeline_id = pipeline_id
         self._camera_id = camera_id
@@ -71,8 +74,9 @@ class PipelineExecutionWorker:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
-        # Presentation Buffer
+        # Presentation Buffer & Overlay Store
         self._presentation_buffer = PresentationFrameBuffer(capacity=5)
+        self._overlay_store = overlay_store if overlay_store is not None else OverlayStore()
 
         # Worker Metrics
         self._total_processed_frames = 0
@@ -103,6 +107,10 @@ class PipelineExecutionWorker:
     @property
     def presentation_buffer(self) -> PresentationFrameBuffer:
         return self._presentation_buffer
+
+    @property
+    def overlay_store(self) -> OverlayStore:
+        return self._overlay_store
 
     @property
     def total_processed_frames(self) -> int:
@@ -226,6 +234,9 @@ class PipelineExecutionWorker:
                     )
                     # logger.info("PRESENTATION BUILT")
                     self._presentation_buffer.update(presentation)
+                    if self._overlay_store is not None:
+                        overlay = OverlayData.from_presentation(presentation)
+                        self._overlay_store.publish(self._pipeline_id, overlay)
                     # logger.info("PRESENTATION UPDATED")
                 # Instrument Metrics Accumulator
                 if self._metrics_accumulator is not None:

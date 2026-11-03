@@ -20,6 +20,7 @@ from camera_analytics.config.schema import (
     RunnerConfig,
     SourceConfig,
     TrackerConfig,
+    ViewerConfig,
 )
 from camera_analytics.models.zone import Zone
 
@@ -75,6 +76,7 @@ class ConfigLoader:
         runner_cfg = cls._load_runner(data.get("runner", {}))
         analytics_cfg = cls._load_analytics(data.get("analytics", {}))
         ingestion_cfg = cls._load_ingestion(data.get("ingestion", {}))
+        viewer_cfg = cls._load_viewer(data.get("viewer", {}))
 
         return AppConfig(
             camera=camera_cfg,
@@ -84,6 +86,7 @@ class ConfigLoader:
             runner=runner_cfg,
             analytics=analytics_cfg,
             ingestion=ingestion_cfg,
+            viewer=viewer_cfg,
         )
 
     @classmethod
@@ -284,3 +287,20 @@ class ConfigLoader:
             queue_capacity=queue_capacity,
             buffer_capacity=buffer_capacity,
         )
+
+    @classmethod
+    def _load_viewer(cls, data: dict[str, Any]) -> ViewerConfig:
+        """Validate and construct ViewerConfig."""
+        if not isinstance(data, dict):
+            raise ConfigValidationError("'viewer' configuration section must be a dictionary.")
+
+        decoupled_display = bool(data.get("decoupled_display", False))
+        overlay_max_age_ms = float(data.get("overlay_max_age_ms", 500.0))
+        if overlay_max_age_ms < 0:
+            raise ConfigValidationError("'viewer.overlay_max_age_ms' must be non-negative.")
+
+        return ViewerConfig(
+            decoupled_display=decoupled_display,
+            overlay_max_age_ms=overlay_max_age_ms,
+        )
+
